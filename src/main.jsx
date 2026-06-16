@@ -118,8 +118,11 @@ function App() {
   const [page, setPage] = useState(data.account ? 'dashboard' : 'auth')
   const blocked = isBlocked(data.profile)
   const plan = APP_CONFIG.plans[data.profile.plan]
+  const isPublicScheduleRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/agendar/')
 
   const update = (patch) => setData(prev => { const next = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch }; saveState(next); return next })
+
+  if (isPublicScheduleRoute) return <PublicScheduleRoute data={data} update={update} />
 
   function signup(e) {
     e.preventDefault()
@@ -444,6 +447,73 @@ function PublicPage({ data, update, blocked }) {
       <div className="list">{data.services.length?data.services.map(s=><div className="item" key={s.id}><div><h4>{s.name}</h4><p>{s.duration} min</p></div><span className="pill">{formatBRL(Number(s.price||0))}</span></div>):<div className="empty">Cadastre seus serviços para aparecerem aqui.</div>}</div>
     </div>
   </section>
+}
+
+
+function PublicScheduleRoute({ data, update }) {
+  const [sent, setSent] = useState(false)
+  const profile = data.profile || starter.profile
+  const whatsappLink = normalizeWhatsAppLink(profile.phone)
+  const instagramLink = normalizeInstagramLink(profile.instagram)
+  const slug = typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean).pop() : ''
+
+  function requestBooking(e) {
+    e.preventDefault()
+    const f = new FormData(e.currentTarget)
+    const service = data.services.find(s => s.id === f.get('serviceId'))
+    const appointment = {
+      id: uid(),
+      date: f.get('date'),
+      time: f.get('time'),
+      client: f.get('client'),
+      phone: f.get('phone'),
+      serviceId: f.get('serviceId'),
+      professionalId: f.get('professionalId'),
+      status: 'Solicitado',
+      price: service?.price || 0
+    }
+    update(prev => ({ ...prev, appointments: [...prev.appointments, appointment] }))
+    setSent(true)
+    e.currentTarget.reset()
+  }
+
+  const serviceOptions = data.services.length ? data.services : [{ id: 'manual', name: 'Atendimento', price: 0, duration: '' }]
+  const professionalOptions = data.professionals.length ? data.professionals : [{ id: '', name: 'Profissional a definir' }]
+
+  return <div className="public-booking-page">
+    <header className="public-booking-header">
+      <div className="logo"><span className="logo-mark"><Sparkles size={20}/></span><span>{APP_CONFIG.appName}</span></div>
+    </header>
+    <main className="public-booking-wrap">
+      <section className="card public-cover">
+        <span className="badge">Agenda online</span>
+        <h1>{profile.studioName || 'Studio de unhas'}</h1>
+        <p className="muted">{profile.bio || 'Escolha seu serviço e solicite um horário.'}</p>
+        <div className="public-links">
+          {whatsappLink && <a className="ghost" href={whatsappLink} target="_blank">WhatsApp</a>}
+          {instagramLink && <a className="ghost" href={instagramLink} target="_blank">Instagram</a>}
+        </div>
+        <div className="photo-grid public-photo-preview">
+          {data.publicPhotos.length ? data.publicPhotos.map(ph => <div className="photo" key={ph.id}><img src={ph.url} alt={ph.caption || 'Foto'} /></div>) : <div className="empty">As fotos da página pública aparecerão aqui.</div>}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Solicitar agendamento</h2>
+        {sent && <div className="success-box">Solicitação recebida. A profissional poderá confirmar o horário pelo painel.</div>}
+        <form className="form" onSubmit={requestBooking}>
+          <label>Nome<input name="client" required placeholder="Seu nome" /></label>
+          <label>WhatsApp<input name="phone" required placeholder="Ex: 27999999999" /></label>
+          <label>Serviço<select name="serviceId">{serviceOptions.map(s => <option key={s.id} value={s.id}>{s.name}{s.price ? ` · ${formatBRL(Number(s.price))}` : ''}</option>)}</select></label>
+          <label>Profissional<select name="professionalId">{professionalOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+          <label>Data<input name="date" type="date" required defaultValue={todayISO()} /></label>
+          <label>Horário<input name="time" type="time" required /></label>
+          <button className="primary">Solicitar horário</button>
+        </form>
+        <p className="muted">Link: /agendar/{slug}</p>
+      </section>
+    </main>
+  </div>
 }
 
 createRoot(document.getElementById('root')).render(<App />)
