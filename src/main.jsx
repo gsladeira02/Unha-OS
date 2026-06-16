@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CalendarDays, Check, Clock, CreditCard, ImagePlus, MapPin, Scissors, Sparkles, Users, Wallet } from 'lucide-react'
+import { CalendarDays, Check, Clock, CreditCard, ImagePlus, LogOut, MapPin, Scissors, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
 import { APP_CONFIG, formatBRL } from './config.js'
 
@@ -83,13 +83,13 @@ function photoLimit(plan) {
 
 function App() {
   const [data, setData] = useState(loadState)
-  const [page, setPage] = useState(data.account ? 'dashboard' : 'plans')
+  const [page, setPage] = useState(data.account ? 'dashboard' : 'auth')
   const blocked = isBlocked(data.profile)
   const plan = APP_CONFIG.plans[data.profile.plan]
 
   const update = (patch) => setData(prev => { const next = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch }; saveState(next); return next })
 
-  function login(e) {
+  function signup(e) {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
     const name = form.get('name')?.trim()
@@ -104,6 +104,23 @@ function App() {
     setPage(profile.plan === APP_CONFIG.adminPlanId ? 'dashboard' : 'planos')
   }
 
+  function loginExisting(e) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    const email = form.get('email')?.trim()
+    const password = form.get('password')?.trim()
+    if (!email || !password) return alert('Preencha e-mail e senha.')
+    const currentName = data.account?.name || data.profile?.studioName || 'Cliente'
+    const profile = isAdminEmail(email) ? buildProfileForSignup(email, 'Admin SistemasOS', APP_CONFIG.adminPlanId, 'lifetime') : data.profile
+    update(prev => ({ ...prev, account: { name: currentName, email }, profile }))
+    setPage('dashboard')
+  }
+
+  function logout() {
+    update(prev => ({ ...prev, account: null }))
+    setPage('auth')
+  }
+
   function activate(recurrenceId) {
     const rec = APP_CONFIG.plans[data.profile.plan].recurrences.find(r => r.id === recurrenceId)
     update(prev => ({ ...prev, profile: { ...prev.profile, recurrence: recurrenceId, status: 'active', dueDate: addMonths(todayISO(), rec.accessMonths) } }))
@@ -115,25 +132,66 @@ function App() {
       <div className="logo"><span className="logo-mark"><Sparkles size={20}/></span><span>{APP_CONFIG.appName}</span><span className="pill">{APP_CONFIG.hubName}</span></div>
       <nav className="nav">
         {data.account && ['dashboard','agenda','clientes','config','pagina','planos'].map(id => <button key={id} className={page===id?'active':''} onClick={() => setPage(id)}>{labelPage(id)}</button>)}
-        {!data.account && <button className={page==='plans'?'active':''} onClick={() => setPage('plans')}>Planos</button>}
+        {data.account && <button className="logout-btn" onClick={logout}><LogOut size={16}/> Sair</button>}
+        {!data.account && <button className={page==='auth'?'active':''} onClick={() => setPage('auth')}>Entrar</button>}
       </nav>
     </header>
 
     <main className="wrap">
-      {blocked && <div className="lock"><strong>Acesso bloqueado.</strong> O vencimento passou há mais de {APP_CONFIG.gracePeriodDays} dias. Regularize em Planos para liberar novamente.</div>}
-      {page === 'plans' && <Plans data={data} update={update} setPage={setPage} />}
-      {page === 'dashboard' && <Dashboard data={data} update={update} blocked={blocked} />}
-      {page === 'agenda' && <Agenda data={data} update={update} blocked={blocked} />}
-      {page === 'clientes' && <Clientes data={data} update={update} blocked={blocked} />}
-      {page === 'config' && <Config data={data} update={update} blocked={blocked} />}
-      {page === 'pagina' && <PublicPage data={data} update={update} blocked={blocked} />}
-      {page === 'planos' && <Plans data={data} update={update} setPage={setPage} />}
-      {!data.account && page !== 'plans' && <Signup login={login} />}
+      {data.account && blocked && <div className="lock"><strong>Acesso bloqueado.</strong> O vencimento passou há mais de {APP_CONFIG.gracePeriodDays} dias. Regularize em Planos para liberar novamente.</div>}
+      {!data.account && <AuthScreen signup={signup} loginExisting={loginExisting} setPage={setPage} />}
+      {data.account && page === 'dashboard' && <Dashboard data={data} update={update} blocked={blocked} />}
+      {data.account && page === 'agenda' && <Agenda data={data} update={update} blocked={blocked} />}
+      {data.account && page === 'clientes' && <Clientes data={data} update={update} blocked={blocked} />}
+      {data.account && page === 'config' && <Config data={data} update={update} blocked={blocked} />}
+      {data.account && page === 'pagina' && <PublicPage data={data} update={update} blocked={blocked} />}
+      {data.account && page === 'planos' && <Plans data={data} update={update} setPage={setPage} />}
     </main>
     <footer className="footer">{APP_CONFIG.appName} · {APP_CONFIG.hubName}</footer>
   </div>
 }
 function labelPage(id) { return ({dashboard:'Início', agenda:'Agenda', clientes:'Clientes', config:'Configuração', pagina:'Página pública', planos:'Planos'})[id] }
+
+
+function AuthScreen({ signup, loginExisting }) {
+  const [mode, setMode] = useState('login')
+  return <section className="auth-shell">
+    <div className="auth-hero card">
+      <span className="badge"><Sparkles size={16}/> Sistema para manicure e pedicure</span>
+      <h1>Organize sua agenda pelo celular.</h1>
+      <p>Entre se você já é cliente ou crie sua conta para configurar profissionais, locais, serviços, agenda e página pública.</p>
+      <div className="auth-highlights">
+        <span><CalendarDays size={16}/> Agenda rápida</span>
+        <span><Users size={16}/> Clientes e profissionais</span>
+        <span><ImagePlus size={16}/> Página com fotos</span>
+      </div>
+    </div>
+
+    <div className="auth-card card">
+      <div className="auth-tabs">
+        <button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Já sou cliente</button>
+        <button className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Novo cliente</button>
+      </div>
+      {mode === 'login' ? <ExistingLogin loginExisting={loginExisting} /> : <Signup login={signup} />}
+    </div>
+
+    <div className="plan-grid auth-plans">
+      {Object.values(APP_CONFIG.plans).filter(plan => !plan.hidden).map((plan) => <PlanCard key={plan.id} plan={plan} current={false} highlight={plan.id==='professional'} />)}
+    </div>
+  </section>
+}
+
+function ExistingLogin({ loginExisting }) {
+  return <div>
+    <h2>Entrar</h2>
+    <form className="form" onSubmit={loginExisting}>
+      <label>E-mail<input name="email" type="email" placeholder="voce@email.com" autoComplete="email" /></label>
+      <label>Senha<input name="password" type="password" placeholder="Sua senha" autoComplete="current-password" /></label>
+      <button className="primary">Entrar no sistema</button>
+      <p className="muted">Acesso admin ilimitado disponível para os e-mails cadastrados internamente.</p>
+    </form>
+  </div>
+}
 
 function Plans({ data, update, setPage }) {
   const [planId, setPlanId] = useState(data.profile.plan || 'individual')
@@ -154,7 +212,7 @@ function Plans({ data, update, setPage }) {
       return
     }
     update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
-    alert('Plano selecionado. A liberação ficará manual enquanto o pagamento online é ajustado.')
+    alert('Plano selecionado. A liberação do pagamento ficará manual enquanto o checkout é ajustado.')
   }
 
   return <>
@@ -163,9 +221,9 @@ function Plans({ data, update, setPage }) {
         <span className="badge"><Sparkles size={16}/> Sistema para manicure e pedicure</span>
         <h1>Agenda, clientes e página em um só lugar.</h1>
         <p>Planos configurados com locais de atendimento ilimitados nos dois planos, profissionais ilimitados no Profissional e limite de fotos totais na página pública.</p>
-        {!data.account && <div className="actions"><button className="primary" onClick={() => setPage('cadastro')}>Criar conta</button><button className="ghost" onClick={() => document.getElementById('planos')?.scrollIntoView({behavior:'smooth'})}>Ver preços</button></div>}
+        {!data.account && <div className="actions"><button className="primary" onClick={() => setPage('auth')}>Entrar ou criar conta</button><button className="ghost" onClick={() => document.getElementById('planos')?.scrollIntoView({behavior:'smooth'})}>Ver preços</button></div>}
       </div>
-      {!data.account ? <Signup login={(e)=>{ e.preventDefault(); const form = new FormData(e.currentTarget); const name=form.get('name')?.trim(); const email=form.get('email')?.trim(); const password=form.get('password')?.trim(); const studioName=form.get('studioName')?.trim(); const selectedPlan=form.get('plan') || 'individual'; const selectedRecurrence=form.get('recurrence') || 'monthly'; if(!name||!email||!password) return alert('Preencha nome, e-mail e senha.'); const next={...starter, account:{name,email}, profile:buildProfileForSignup(email, studioName, selectedPlan, selectedRecurrence)}; saveState(next); location.reload() }} /> : <PlanSelector planId={planId} recurrenceId={recurrenceId} setPlanId={selectPlan} setRecurrenceId={setRecurrenceId} selectedPlan={selectedPlan} selectedRecurrence={selectedRecurrence} onCheckout={goToCheckout}/>} 
+      {data.account && <PlanSelector planId={planId} recurrenceId={recurrenceId} setPlanId={selectPlan} setRecurrenceId={setRecurrenceId} selectedPlan={selectedPlan} selectedRecurrence={selectedRecurrence} onCheckout={goToCheckout}/>} 
     </section>
     <section id="planos" style={{marginTop:20}} className="plan-grid">
       {Object.values(APP_CONFIG.plans).filter(plan => !plan.hidden).map((plan) => <PlanCard key={plan.id} plan={plan} current={data.profile.plan === plan.id} highlight={plan.id==='professional'} />)}
@@ -177,7 +235,7 @@ function Signup({ login }) {
   const [planId, setPlanId] = useState('individual')
   const plan = APP_CONFIG.plans[planId]
   return <div className="card">
-    <h2>Começar agora</h2>
+    <h2>Criar conta</h2>
     <form className="form" onSubmit={login}>
       <label>Nome completo<input name="name" placeholder="Seu nome" /></label>
       <label>E-mail<input name="email" type="email" placeholder="voce@email.com" /></label>

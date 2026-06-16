@@ -95,3 +95,9 @@ export const APP_CONFIG = {
 export function formatBRL(value) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
+
+export function checkoutUrl(planId, recurrenceId) {
+  if (planId === APP_CONFIG.adminPlanId) return '#'
+  const params = new URLSearchParams({ plano: planId, recorrencia: recurrenceId, origem: APP_CONFIG.appName.toLowerCase() })
+  return `https://checkout.infinitepay.io/${APP_CONFIG.infiniteTag}?${params.toString()}`
+}
