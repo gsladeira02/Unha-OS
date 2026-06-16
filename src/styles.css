@@ -105,3 +105,74 @@ input, select, textarea { min-height: 46px; font-size: 16px; }
   .plan.highlight:before { top: 14px; right: 14px; }
   .footer { padding-bottom: 88px; }
 }
+
+/* Correção de layout: login nunca sobrepõe os planos */
+.auth-shell {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
+  gap: 18px;
+  align-items: start;
+}
+.auth-card {
+  position: relative;
+  top: auto;
+  z-index: 1;
+}
+.auth-card.card,
+.auth-hero.card,
+.plan.card {
+  overflow: visible;
+}
+.auth-card h2,
+.plan h2,
+.card h2 {
+  margin-top: 0;
+}
+.auth-tabs {
+  position: relative;
+  z-index: 2;
+}
+.plan-grid {
+  align-items: start;
+}
+.plan {
+  min-width: 0;
+}
+.plan .grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.plan .kpi strong {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.05;
+}
+
+@media (min-width: 761px) {
+  .auth-shell {
+    padding-top: 12px;
+  }
+  .auth-card {
+    max-width: 440px;
+    justify-self: end;
+  }
+}
+
+@media (max-width: 760px) {
+  .auth-shell {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .auth-card {
+    order: -1;
+    width: 100%;
+    max-width: none;
+  }
+  .auth-hero {
+    order: 0;
+  }
+  .plan .grid {
+    grid-template-columns: 1fr;
+  }
+  .plan .kpi {
+    grid-column: span 12;
+  }
+}

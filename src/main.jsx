@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CalendarDays, Check, Clock, CreditCard, ImagePlus, LogOut, MapPin, Scissors, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
-import { APP_CONFIG, formatBRL } from './config.js'
+import { APP_CONFIG, formatBRL, checkoutUrl } from './config.js'
 
 const STORE_KEY = 'unhaos_sistemasos_v1'
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -188,7 +188,6 @@ function ExistingLogin({ loginExisting }) {
       <label>E-mail<input name="email" type="email" placeholder="voce@email.com" autoComplete="email" /></label>
       <label>Senha<input name="password" type="password" placeholder="Sua senha" autoComplete="current-password" /></label>
       <button className="primary">Entrar no sistema</button>
-      <p className="muted">Acesso admin ilimitado disponível para os e-mails cadastrados internamente.</p>
     </form>
   </div>
 }
@@ -212,7 +211,7 @@ function Plans({ data, update, setPage }) {
       return
     }
     update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
-    alert('Plano selecionado. A liberação do pagamento ficará manual enquanto o checkout é ajustado.')
+    window.location.href = checkoutUrl(planId, selectedRecurrence.id)
   }
 
   return <>
@@ -256,8 +255,8 @@ function PlanSelector({ planId, recurrenceId, setPlanId, setRecurrenceId, select
       <label>Plano<select value={planId} onChange={(e)=>setPlanId(e.target.value)}><option value="individual">Individual</option><option value="professional">Profissional</option></select></label>
       <label>Recorrência<select value={recurrenceId} onChange={(e)=>setRecurrenceId(e.target.value)}>{selectedPlan.recurrences.map(r => <option key={r.id} value={r.id}>{r.label} · {r.installments}x de {formatBRL(r.installmentPrice)}</option>)}</select></label>
       <div className="kpi"><strong>{selectedRecurrence.installments}x de {formatBRL(selectedRecurrence.installmentPrice)}</strong><span>Acesso por {selectedRecurrence.accessMonths} {selectedRecurrence.accessMonths===1?'mês':'meses'} · Plano {selectedPlan.name}</span></div>
-      <button className="primary" onClick={onCheckout}>Selecionar plano</button>
-      <p className="muted">A cobrança será liberada manualmente enquanto o pagamento online é ajustado.</p>
+      <button className="primary" onClick={onCheckout}>Ir para pagamento</button>
+      <p className="muted">Depois do pagamento, o acesso pode ser liberado pela administração.</p>
     </div>
   </div>
 }

@@ -98,6 +98,13 @@ export function formatBRL(value) {
 
 export function checkoutUrl(planId, recurrenceId) {
   if (planId === APP_CONFIG.adminPlanId) return '#'
-  const params = new URLSearchParams({ plano: planId, recorrencia: recurrenceId, origem: APP_CONFIG.appName.toLowerCase() })
+  const plan = APP_CONFIG.plans[planId]
+  const recurrence = plan?.recurrences?.find((item) => item.id === recurrenceId)
+  const params = new URLSearchParams({
+    plano: planId,
+    recorrencia: recurrenceId,
+    origem: APP_CONFIG.appName.toLowerCase(),
+    valor: recurrence ? String(recurrence.installmentPrice).replace('.', ',') : ''
+  })
   return `https://checkout.infinitepay.io/${APP_CONFIG.infiniteTag}?${params.toString()}`
 }
