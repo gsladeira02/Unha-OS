@@ -50,7 +50,7 @@ Não precisa cadastrar manualmente 8 links de planos. Ao criar conta ou clicar e
 /api/infinitepay-checkout
 ```
 
-A API interna chama a InfinitePay e devolve o link direto de pagamento.
+A API interna chama a InfinitePay usando o parâmetro `items` exigido pelo checkout e devolve o link direto de pagamento.
 
 ## Como rodar
 

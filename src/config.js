@@ -104,7 +104,7 @@ export function checkoutPayload({ planId, recurrenceId, customer = {}, studioNam
     handle: APP_CONFIG.infiniteTag,
     order_nsu: orderNsu,
     redirect_url: origin ? `${origin}/pagamento-concluido` : undefined,
-    itens: [
+    items: [
       {
         quantity: 1,
         price: amountCents,
