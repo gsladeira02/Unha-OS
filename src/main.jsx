@@ -23,6 +23,7 @@ const starter = {
   locations: [],
   professionals: [],
   professionalSchedules: [],
+  scheduleExceptions: [],
   services: [],
   clients: [],
   appointments: [],
@@ -116,6 +117,67 @@ function readFileAsDataUrl(file) {
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
+}
+
+const DAY_KEY_BY_INDEX = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+const DAY_LABELS = { mon:'Segunda', tue:'Terça', wed:'Quarta', thu:'Quinta', fri:'Sexta', sat:'Sábado', sun:'Domingo' }
+function dayKeyFromDate(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00`)
+  return DAY_KEY_BY_INDEX[d.getDay()]
+}
+function timeToMinutes(value) {
+  const [h, m] = String(value || '00:00').split(':').map(Number)
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
+}
+function minutesToTime(total) {
+  const h = String(Math.floor(total / 60)).padStart(2, '0')
+  const m = String(total % 60).padStart(2, '0')
+  return `${h}:${m}`
+}
+function intervalsOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd
+}
+function appointmentDuration(data, appointment) {
+  const service = data.services.find(s => s.id === appointment.serviceId)
+  return Math.max(15, Number(service?.duration || 30))
+}
+function isDateBlocked(data, professionalId, date) {
+  return (data.scheduleExceptions || []).some(ex => {
+    const sameDate = ex.date === date
+    const sameProfessional = !ex.professionalId || !professionalId || ex.professionalId === professionalId
+    return sameDate && sameProfessional
+  })
+}
+function availableSlotsFor(data, { date, professionalId, serviceId }) {
+  if (!date || !professionalId) return []
+  if (isDateBlocked(data, professionalId, date)) return []
+  const day = dayKeyFromDate(date)
+  const service = data.services.find(s => s.id === serviceId)
+  const duration = Math.max(15, Number(service?.duration || 30))
+  const schedules = (data.professionalSchedules || []).filter(s => s.active !== false && s.professionalId === professionalId && s.day === day)
+  const booked = (data.appointments || []).filter(a => a.date === date && a.professionalId === professionalId && !['Cancelado'].includes(a.status))
+  const slots = []
+
+  for (const schedule of schedules) {
+    const start = timeToMinutes(schedule.start)
+    const end = timeToMinutes(schedule.end)
+    const breakStart = schedule.breakStart ? timeToMinutes(schedule.breakStart) : null
+    const breakEnd = schedule.breakEnd ? timeToMinutes(schedule.breakEnd) : null
+    for (let t = start; t + duration <= end; t += 30) {
+      const slotEnd = t + duration
+      if (breakStart !== null && breakEnd !== null && intervalsOverlap(t, slotEnd, breakStart, breakEnd)) continue
+      const busy = booked.some(a => {
+        const appointmentStart = timeToMinutes(a.time)
+        const appointmentEnd = appointmentStart + appointmentDuration(data, a)
+        return intervalsOverlap(t, slotEnd, appointmentStart, appointmentEnd)
+      })
+      if (!busy) slots.push(minutesToTime(t))
+    }
+  }
+  return [...new Set(slots)].sort()
+}
+function formatDateBR(date) {
+  return date ? date.split('-').reverse().join('/') : ''
 }
 
 async function createInfinitePayCheckout(payload) {
@@ -395,18 +457,28 @@ function PlanCard({ plan, current, highlight }) {
 }
 
 function Dashboard({ data, update, blocked }) {
-  const totalHoje = data.appointments.filter(a=>a.date===todayISO()).reduce((s,a)=>s+Number(a.price||0),0)
+  const totalHoje = data.appointments.filter(a=>a.date===todayISO()).reduce((sum,a)=>sum+Number(a.price||0),0)
+  const upcoming = [...(data.appointments || [])]
+    .filter(a => a.status !== 'Finalizado' && a.status !== 'Cancelado')
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))
+    .slice(0, 8)
   return <>
     <section className="card">
       <span className="badge"><Scissors size={16}/> {data.profile.studioName}</span>
       <h1 style={{fontSize:'clamp(2rem,6vw,4rem)', margin:'0 0 10px'}}>Bem-vinda ao UnhaOS</h1>
-      <p className="muted">Configure locais, profissionais, serviços, horários e use a agenda. Mensagens automáticas não foram incluídas; há apenas botão manual para WhatsApp.</p>
+      <p className="muted">Configure locais, profissionais, serviços, horários, exceções de agenda e acompanhe os horários marcados no painel.</p>
     </section>
     <section className="grid" style={{marginTop:16}}>
       <Kpi icon={<CalendarDays/>} label="Atendimentos hoje" value={data.appointments.filter(a=>a.date===todayISO()).length}/>
       <Kpi icon={<Wallet/>} label="Vendas hoje" value={formatBRL(totalHoje)}/>
       <Kpi icon={<Users/>} label="Clientes" value={data.clients.length}/>
       <Kpi icon={<CreditCard/>} label="Plano" value={APP_CONFIG.plans[data.profile.plan].name}/>
+    </section>
+    <section className="card" style={{marginTop:16}}>
+      <h2><CalendarDays/> Próximos horários marcados</h2>
+      <div className="list">
+        {upcoming.length ? upcoming.map(a => <Appointment key={a.id} a={a} data={data} update={update}/>) : <div className="empty">Nenhum horário marcado ainda.</div>}
+      </div>
     </section>
   </>
 }
@@ -441,11 +513,27 @@ function Config({ data, update, blocked }) {
     }))
     e.currentTarget.reset()
   }
+  const addException = e => {
+    e.preventDefault(); if(blocked) return
+    const f = new FormData(e.currentTarget)
+    const date = f.get('date')
+    if (!date) return alert('Escolha a data da exceção.')
+    update(p=>({
+      ...p,
+      scheduleExceptions:[...(p.scheduleExceptions || []),{
+        id: uid(),
+        date,
+        professionalId: f.get('professionalId') || '',
+        reason: f.get('reason') || 'Agenda indisponível'
+      }]
+    }))
+    e.currentTarget.reset()
+  }
   return <section className="grid">
     <div className="card col-4"><h2><MapPin/> Locais ilimitados</h2><form className="form" onSubmit={addLocation}><label>Nome<input name="name" placeholder="Studio, domicílio, sala..."/></label><label>Endereço<input name="address"/></label><label>Telefone<input name="phone"/></label><button className="primary">Cadastrar local</button></form></div>
     <div className="card col-4"><h2><Users/> Profissionais</h2><p className="muted">Limite: {plan.limits.professionals}</p><form className="form" onSubmit={addPro}><label>Nome<input name="name"/></label><label>Celular<input name="phone"/></label><label>Comissão %<input name="commission" type="number" min="0" max="100"/></label><button className="primary">Cadastrar profissional</button></form></div>
     <div className="card col-4"><h2><Scissors/> Serviços</h2><form className="form" onSubmit={addService}><label>Serviço<input name="name" placeholder="Manicure + pedicure"/></label><label>Duração em minutos<input name="duration" type="number"/></label><label>Valor<input name="price" type="number" step="0.01"/></label><label>Profissional<select name="professionalId"><option value="">Todos/indefinido</option>{data.professionals.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><button className="primary">Cadastrar serviço</button></form></div>
-    <div className="card col-12"><h2><Clock/> Horários por profissional</h2><p className="muted">Cadastre os dias e horários de atendimento de cada profissional. Esses horários aparecem vinculados à profissional escolhida.</p><form className="form schedule-form" onSubmit={addSchedule}>
+    <div className="card col-12"><h2><Clock/> Horários por profissional</h2><p className="muted">Cadastre os dias e horários de atendimento de cada profissional. A página pública só libera horários dentro desses períodos.</p><form className="form schedule-form" onSubmit={addSchedule}>
       <label>Profissional<select name="professionalId"><option value="">Selecionar profissional</option>{data.professionals.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <label>Local<select name="locationId"><option value="">Todos/indefinido</option>{data.locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
       <label>Dia da semana<select name="day">{days.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
@@ -455,11 +543,17 @@ function Config({ data, update, blocked }) {
       <label>Intervalo fim<input type="time" name="breakEnd" /></label>
       <button className="primary">Cadastrar horário</button>
     </form></div>
+    <div className="card col-12"><h2>Exceções de agenda</h2><p className="muted">Use para feriados, folgas, viagens ou qualquer data em que a agenda não deve ficar disponível. Deixe a profissional em branco para bloquear a data para todas.</p><form className="form schedule-form" onSubmit={addException}>
+      <label>Data bloqueada<input type="date" name="date" required /></label>
+      <label>Profissional<select name="professionalId"><option value="">Todas as profissionais</option>{data.professionals.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label>Motivo<input name="reason" placeholder="Ex: Feriado, folga, evento..." /></label>
+      <button className="primary">Bloquear data</button>
+    </form></div>
     <Lists data={data} update={update}/>
   </section>
 }
 function Lists({ data, update }) {
-  return <div className="card col-12"><h2>Cadastros</h2><div className="grid"><MiniList title="Locais" items={data.locations}/><MiniList title="Profissionais" items={data.professionals}/><MiniList title="Serviços" items={data.services}/><ScheduleList data={data}/></div></div>
+  return <div className="card col-12"><h2>Cadastros</h2><div className="grid"><MiniList title="Locais" items={data.locations}/><MiniList title="Profissionais" items={data.professionals}/><MiniList title="Serviços" items={data.services}/><ScheduleList data={data}/><ExceptionList data={data}/></div></div>
 }
 function MiniList({ title, items }) { return <div className="col-4"><h3>{title}</h3><div className="list">{items.length?items.map(i=><div className="item" key={i.id}><div><h4>{i.name}</h4><p>{i.address || i.phone || (i.price ? formatBRL(Number(i.price)) : '')}</p></div></div>):<div className="empty">Nenhum cadastro ainda.</div>}</div></div> }
 function ScheduleList({ data }) {
@@ -472,16 +566,29 @@ function ScheduleList({ data }) {
   }):<div className="empty">Nenhum horário cadastrado ainda.</div>}</div></div>
 }
 
+function ExceptionList({ data }) {
+  const items = data.scheduleExceptions || []
+  return <div className="col-12"><h3>Exceções cadastradas</h3><div className="list">{items.length?items.map(i=>{
+    const pro = data.professionals.find(p=>p.id===i.professionalId)
+    return <div className="item" key={i.id}><div><h4>{formatDateBR(i.date)} · {pro?.name || 'Todas as profissionais'}</h4><p>{i.reason || 'Agenda indisponível'}</p></div><span className="pill">Bloqueado</span></div>
+  }):<div className="empty">Nenhuma exceção cadastrada.</div>}</div></div>
+}
+
 function Agenda({ data, update, blocked }) {
   const add = e => { e.preventDefault(); if(blocked) return; const f=new FormData(e.currentTarget); const service=data.services.find(s=>s.id===f.get('serviceId')); update(p=>({...p, appointments:[...p.appointments,{id:uid(),date:f.get('date'),time:f.get('time'),client:f.get('client'),phone:f.get('phone'),serviceId:f.get('serviceId'),professionalId:f.get('professionalId'),status:'Agendado',price:service?.price||0}]})); e.currentTarget.reset() }
-  const sorted = [...data.appointments].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))
-  return <section className="grid"><div className="card col-5"><h2><CalendarDays/> Novo agendamento</h2><form className="form" onSubmit={add}><label>Data<input type="date" name="date" defaultValue={todayISO()}/></label><label>Hora<input type="time" name="time"/></label><label>Cliente<input name="client"/></label><label>WhatsApp<input name="phone"/></label><label>Serviço<select name="serviceId">{data.services.map(s=><option key={s.id} value={s.id}>{s.name} · {formatBRL(Number(s.price||0))}</option>)}</select></label><label>Profissional<select name="professionalId"><option value="">Selecionar</option>{data.professionals.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><button className="primary">Agendar</button></form></div><div className="card col-7"><h2>Agenda</h2><div className="list">{sorted.length?sorted.map(a=><Appointment key={a.id} a={a} data={data} update={update}/>):<div className="empty">Nenhum agendamento ainda.</div>}</div></div></section>
+  const sorted = [...(data.appointments || [])].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))
+  const pending = sorted.filter(a => a.status === 'Solicitado')
+  return <section className="grid">
+    <div className="card col-5"><h2><CalendarDays/> Novo agendamento</h2><form className="form" onSubmit={add}><label>Data<input type="date" name="date" defaultValue={todayISO()}/></label><label>Hora<input type="time" name="time"/></label><label>Cliente<input name="client"/></label><label>WhatsApp<input name="phone"/></label><label>Serviço<select name="serviceId">{data.services.map(s=><option key={s.id} value={s.id}>{s.name} · {formatBRL(Number(s.price||0))}</option>)}</select></label><label>Profissional<select name="professionalId"><option value="">Selecionar</option>{data.professionals.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><button className="primary">Agendar</button></form></div>
+    <div className="card col-7"><h2>Horários marcados</h2>{pending.length > 0 && <p className="muted">Você tem {pending.length} solicitação{pending.length>1?'ões':''} aguardando confirmação.</p>}<div className="list">{sorted.length?sorted.map(a=><Appointment key={a.id} a={a} data={data} update={update}/>):<div className="empty">Nenhum agendamento ainda.</div>}</div></div>
+  </section>
 }
 function Appointment({ a, data, update }) {
   const service=data.services.find(s=>s.id===a.serviceId); const pro=data.professionals.find(p=>p.id===a.professionalId)
-  const msg=encodeURIComponent(`Oi, ${a.client}! Seu horário para ${service?.name||'atendimento'} está marcado para ${a.date.split('-').reverse().join('/')} às ${a.time}.`)
+  const msg=encodeURIComponent(`Oi, ${a.client}! Seu horário para ${service?.name||'atendimento'} está marcado para ${formatDateBR(a.date)} às ${a.time}.`)
   const phone=(a.phone||'').replace(/\D/g,'')
-  return <div className="item"><div><h4>{a.date.split('-').reverse().join('/')} · {a.time} · {a.client}</h4><p>{service?.name} · {pro?.name||'Profissional não definida'} · {formatBRL(Number(a.price||0))}</p></div><div className="actions" style={{margin:0}}><span className="pill">{a.status}</span>{phone&&<a className="ghost" target="_blank" href={`https://wa.me/55${phone}?text=${msg}`}>WhatsApp</a>}<button className="primary" onClick={()=>update(p=>({...p,appointments:p.appointments.map(x=>x.id===a.id?{...x,status:'Finalizado'}:x)}))}>Finalizar</button></div></div>
+  const setStatus = (status) => update(p=>({...p,appointments:p.appointments.map(x=>x.id===a.id?{...x,status}:x)}))
+  return <div className="item"><div><h4>{formatDateBR(a.date)} · {a.time} · {a.client}</h4><p>{service?.name || 'Serviço'} · {pro?.name||'Profissional não definida'} · {formatBRL(Number(a.price||0))}</p></div><div className="actions" style={{margin:0}}><span className="pill">{a.status}</span>{phone&&<a className="ghost" target="_blank" href={`https://wa.me/55${phone}?text=${msg}`}>WhatsApp</a>}{a.status === 'Solicitado' && <button className="primary" onClick={()=>setStatus('Confirmado')}>Confirmar</button>}{a.status !== 'Cancelado' && <button className="ghost" onClick={()=>setStatus('Cancelado')}>Cancelar</button>}{a.status !== 'Finalizado' && <button className="primary" onClick={()=>setStatus('Finalizado')}>Finalizar</button>}</div></div>
 }
 
 function Clientes({ data, update, blocked }) {
@@ -601,20 +708,34 @@ function PaymentReturn({ data, update, setPage }) {
 }
 
 function PublicScheduleRoute({ data, update }) {
-  const [sent, setSent] = useState(false)
+  const [confirmed, setConfirmed] = useState(null)
   const profile = data.profile || starter.profile
   const whatsappLink = normalizeWhatsAppLink(profile.phone)
   const instagramLink = normalizeInstagramLink(profile.instagram)
-  const slug = typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean).pop() : ''
+  const serviceOptions = data.services.length ? data.services : [{ id: 'manual', name: 'Atendimento', price: 0, duration: 30 }]
+  const professionalOptions = data.professionals.length ? data.professionals : [{ id: '', name: 'Profissional a definir' }]
+  const [booking, setBooking] = useState({
+    serviceId: serviceOptions[0]?.id || '',
+    professionalId: professionalOptions[0]?.id || '',
+    date: todayISO()
+  })
+  const slots = availableSlotsFor(data, booking)
+
+  function updateBooking(field, value) {
+    setBooking(prev => ({ ...prev, [field]: value }))
+  }
 
   function requestBooking(e) {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
-    const service = data.services.find(s => s.id === f.get('serviceId'))
+    const service = data.services.find(s => s.id === f.get('serviceId')) || serviceOptions.find(s => s.id === f.get('serviceId'))
+    const professional = data.professionals.find(p => p.id === f.get('professionalId')) || professionalOptions.find(p => p.id === f.get('professionalId'))
+    const time = f.get('time')
+    if (!time) return alert('Selecione um horário disponível.')
     const appointment = {
       id: uid(),
       date: f.get('date'),
-      time: f.get('time'),
+      time,
       client: f.get('client'),
       phone: f.get('phone'),
       serviceId: f.get('serviceId'),
@@ -623,12 +744,28 @@ function PublicScheduleRoute({ data, update }) {
       price: service?.price || 0
     }
     update(prev => ({ ...prev, appointments: [...prev.appointments, appointment] }))
-    setSent(true)
-    e.currentTarget.reset()
+    setConfirmed({ ...appointment, serviceName: service?.name || 'Atendimento', professionalName: professional?.name || 'Profissional a definir' })
   }
 
-  const serviceOptions = data.services.length ? data.services : [{ id: 'manual', name: 'Atendimento', price: 0, duration: '' }]
-  const professionalOptions = data.professionals.length ? data.professionals : [{ id: '', name: 'Profissional a definir' }]
+  if (confirmed) {
+    return <div className="public-booking-page">
+      <header className="public-booking-header"><div className="logo"><span className="logo-mark"><Sparkles size={20}/></span><span>{APP_CONFIG.appName}</span></div></header>
+      <main className="public-booking-wrap single">
+        <section className="card confirmation-card">
+          <span className="badge"><Check size={16}/> Agendamento confirmado</span>
+          <h1>Solicitação enviada</h1>
+          <p className="muted">Seu horário foi registrado e aparecerá no painel da profissional para confirmação.</p>
+          <div className="list">
+            <div className="item"><div><h4>{confirmed.serviceName}</h4><p>{confirmed.professionalName} · {formatDateBR(confirmed.date)} às {confirmed.time}</p></div><span className="pill">Solicitado</span></div>
+          </div>
+          <div className="actions">
+            <button className="primary" onClick={() => setConfirmed(null)}>Solicitar outro horário</button>
+            {whatsappLink && <a className="ghost" href={whatsappLink} target="_blank">Falar no WhatsApp</a>}
+          </div>
+        </section>
+      </main>
+    </div>
+  }
 
   return <div className="public-booking-page">
     <header className="public-booking-header">
@@ -650,17 +787,16 @@ function PublicScheduleRoute({ data, update }) {
 
       <section className="card">
         <h2>Solicitar agendamento</h2>
-        {sent && <div className="success-box">Solicitação recebida. A profissional poderá confirmar o horário pelo painel.</div>}
         <form className="form" onSubmit={requestBooking}>
           <label>Nome<input name="client" required placeholder="Seu nome" /></label>
           <label>WhatsApp<input name="phone" required placeholder="Ex: 27999999999" /></label>
-          <label>Serviço<select name="serviceId">{serviceOptions.map(s => <option key={s.id} value={s.id}>{s.name}{s.price ? ` · ${formatBRL(Number(s.price))}` : ''}</option>)}</select></label>
-          <label>Profissional<select name="professionalId">{professionalOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-          <label>Data<input name="date" type="date" required defaultValue={todayISO()} /></label>
-          <label>Horário<input name="time" type="time" required /></label>
+          <label>Serviço<select name="serviceId" value={booking.serviceId} onChange={(e)=>updateBooking('serviceId', e.target.value)}>{serviceOptions.map(s => <option key={s.id} value={s.id}>{s.name}{s.price ? ` · ${formatBRL(Number(s.price))}` : ''}</option>)}</select></label>
+          <label>Profissional<select name="professionalId" value={booking.professionalId} onChange={(e)=>updateBooking('professionalId', e.target.value)}>{professionalOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+          <label>Data<input name="date" type="date" required value={booking.date} onChange={(e)=>updateBooking('date', e.target.value)} /></label>
+          <label>Horário<select name="time" required disabled={!slots.length}><option value="">{slots.length ? 'Selecionar horário' : 'Nenhum horário disponível'}</option>{slots.map(slot => <option key={slot} value={slot}>{slot}</option>)}</select></label>
+          {!slots.length && <p className="muted">Não há horários disponíveis para essa profissional nesta data. Escolha outra data ou profissional.</p>}
           <button className="primary">Solicitar horário</button>
         </form>
-        <p className="muted">Link: /agendar/{slug}</p>
       </section>
     </main>
   </div>

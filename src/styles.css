@@ -207,3 +207,5 @@ input, select, textarea { min-height: 46px; font-size: 16px; }
 .schedule-form label { min-width: 0; }
 .schedule-form button { align-self: end; }
 @media (max-width: 760px) { .schedule-form { grid-template-columns: 1fr; } }
+.public-booking-wrap.single { grid-template-columns: minmax(0, 680px); justify-content: center; }
+.confirmation-card h1 { font-size: clamp(2.2rem, 8vw, 4.2rem); margin: 6px 0 10px; letter-spacing: -.06em; }
