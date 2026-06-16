@@ -2,24 +2,6 @@ export const APP_CONFIG = {
   appName: 'UnhaOS',
   hubName: 'SistemasOS',
   infiniteTag: 'sistemasos',
-  // Pagamento por link direto de cobrança/assinatura.
-  // Para não cair na página de produtos da loja, cole aqui o LINK DIRETO de cada plano criado na InfinitePay.
-  // Caminho na InfinitePay: Vendas > Planos e Recorrência > Criar assinatura/Novo plano > copiar link de inscrição.
-  // Enquanto algum link estiver vazio, o app avisa em vez de mandar a cliente para a loja de produtos.
-  paymentLinks: {
-    individual: {
-      monthly: '',      // Individual mensal - R$ 9,90
-      quarterly: '',    // Individual trimestral - 3x R$ 8,90
-      semester: '',     // Individual semestral - 6x R$ 7,90
-      annual: ''        // Individual anual - 12x R$ 4,90
-    },
-    professional: {
-      monthly: '',      // Profissional mensal - R$ 19,90
-      quarterly: '',    // Profissional trimestral - 3x R$ 17,90
-      semester: '',     // Profissional semestral - 6x R$ 14,90
-      annual: ''        // Profissional anual - 12x R$ 9,90
-    }
-  },
   gracePeriodDays: 3,
   supportWhatsApp: '',
   adminEmails: ['gabriel.ladeira2003@gmail.com', 'gsousaladeira@icloud.com'],
@@ -111,18 +93,52 @@ export const APP_CONFIG = {
 }
 
 
-export function paymentUrl(planId, recurrenceId) {
-  const direct = APP_CONFIG.paymentLinks?.[planId]?.[recurrenceId]
-  if (direct && String(direct).trim()) return String(direct).trim()
-  return ''
-}
+export function checkoutPayload({ planId, recurrenceId, customer = {}, studioName = '' }) {
+  const plan = APP_CONFIG.plans[planId] || APP_CONFIG.plans.individual
+  const recurrence = plan.recurrences.find((item) => item.id === recurrenceId) || plan.recurrences[0]
+  const amountCents = Math.round(recurrence.installments * recurrence.installmentPrice * 100)
+  const orderNsu = `unhaos-${plan.id}-${recurrence.id}-${Date.now()}`
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
 
-export function missingPaymentLinkText(planId, recurrenceId) {
-  const plan = APP_CONFIG.plans[planId]
-  const recurrence = plan?.recurrences?.find((item) => item.id === recurrenceId)
-  const planName = plan?.name || planId
-  const recName = recurrence?.label || recurrenceId
-  return `O link direto de pagamento do plano ${planName} ${recName} ainda não foi configurado. Cole o link da cobrança em src/config.js > paymentLinks.${planId}.${recurrenceId}.`
+  return {
+    handle: APP_CONFIG.infiniteTag,
+    order_nsu: orderNsu,
+    redirect_url: origin ? `${origin}/pagamento-concluido` : undefined,
+    itens: [
+      {
+        quantity: 1,
+        price: amountCents,
+        description: recurrenceDescription(plan.id, recurrence.id)
+      }
+    ],
+    customer: {
+      name: customer.name || '',
+      email: customer.email || '',
+      phone_number: customer.phone ? String(customer.phone) : undefined
+    },
+    metadata: {
+      app: 'UnhaOS',
+      studio_name: studioName || '',
+      plan_id: plan.id,
+      plan_name: plan.name,
+      recurrence_id: recurrence.id,
+      recurrence_label: recurrence.label,
+      access_months: recurrence.accessMonths,
+      installments: recurrence.installments,
+      installment_cents: Math.round(recurrence.installmentPrice * 100),
+      amount_cents: amountCents,
+      grace_days: APP_CONFIG.gracePeriodDays
+    },
+    plan: {
+      id: plan.id,
+      name: `UnhaOS ${plan.name} - ${recurrence.label}`,
+      price: amountCents,
+      display: `${recurrence.installments}x de ${formatBRL(recurrence.installmentPrice)}`,
+      recurrence: true,
+      cycle_months: recurrence.accessMonths,
+      installments: recurrence.installments
+    }
+  }
 }
 
 export function formatBRL(value) {

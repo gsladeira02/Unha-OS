@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CalendarDays, Check, Clock, CreditCard, ImagePlus, Link as LinkIcon, LogOut, MapPin, Scissors, Share2, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
-import { APP_CONFIG, formatBRL, paymentUrl, missingPaymentLinkText } from './config.js'
+import { APP_CONFIG, formatBRL, checkoutPayload } from './config.js'
 
 const STORE_KEY = 'unhaos_sistemasos_v1'
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -118,6 +118,19 @@ function readFileAsDataUrl(file) {
   })
 }
 
+async function createInfinitePayCheckout(payload) {
+  const response = await fetch('/api/infinitepay-checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok || !result.url) {
+    throw new Error(result.error || 'Não foi possível gerar o pagamento agora.')
+  }
+  return result.url
+}
+
 
 function App() {
   const [data, setData] = useState(loadState)
@@ -125,10 +138,12 @@ function App() {
   const blocked = isBlocked(data.profile)
   const plan = APP_CONFIG.plans[data.profile.plan]
   const isPublicScheduleRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/agendar/')
+  const isPaymentReturnRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/pagamento-concluido')
 
   const update = (patch) => setData(prev => { const next = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch }; saveState(next); return next })
 
   if (isPublicScheduleRoute) return <PublicScheduleRoute data={data} update={update} />
+  if (isPaymentReturnRoute) return <PaymentReturn data={data} update={update} setPage={setPage} />
 
   async function signup(e) {
     e.preventDefault()
@@ -150,14 +165,30 @@ function App() {
       return
     }
 
-    const checkoutUrl = paymentUrl(selectedPlan, selectedRec)
-    if (!checkoutUrl) {
-      alert(missingPaymentLinkText(selectedPlan, selectedRec))
-      setPage('plans')
-      return
+    if (submitter) { submitter.disabled = true; submitter.textContent = 'Gerando pagamento...' }
+    try {
+      const payload = checkoutPayload({
+        planId: selectedPlan,
+        recurrenceId: selectedRec,
+        customer: { name, email },
+        studioName
+      })
+      localStorage.setItem('unhaos.last_checkout', JSON.stringify({
+        orderNsu: payload.order_nsu,
+        planId: selectedPlan,
+        recurrenceId: selectedRec,
+        studioName,
+        createdAt: new Date().toISOString()
+      }))
+      const checkoutUrl = await createInfinitePayCheckout(payload)
+      window.location.href = checkoutUrl
+    } catch (error) {
+      console.error(error)
+      alert(error.message || 'Erro ao gerar pagamento.')
+      setPage('planos')
+    } finally {
+      if (submitter) { submitter.disabled = false; submitter.textContent = 'Criar conta e ir para pagamento' }
     }
-    if (submitter) { submitter.disabled = true; submitter.textContent = 'Abrindo pagamento...' }
-    window.location.href = checkoutUrl
   }
 
   function loginExisting(e) {
@@ -262,22 +293,37 @@ function Plans({ data, update, setPage }) {
     if (!nextPlan.recurrences.some(r => r.id === recurrenceId)) setRecurrenceId('monthly')
   }
 
-  function goToCheckout() {
+  async function goToCheckout() {
     if (!data.account) return
     if (data.profile.plan === APP_CONFIG.adminPlanId) {
       alert('Conta admin já possui acesso ilimitado.')
       return
     }
     setIsPaying(true)
-    const checkoutUrl = paymentUrl(planId, selectedRecurrence.id)
-    if (!checkoutUrl) {
-      setIsPaying(false)
-      setPaymentMessage(missingPaymentLinkText(planId, selectedRecurrence.id))
-      return
-    }
-    setPaymentMessage('Abrindo pagamento...')
+    setPaymentMessage('Gerando pagamento...')
     update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
-    window.location.href = checkoutUrl
+    try {
+      const payload = checkoutPayload({
+        planId,
+        recurrenceId: selectedRecurrence.id,
+        customer: { name: data.account.name, email: data.account.email },
+        studioName: data.profile.studioName
+      })
+      localStorage.setItem('unhaos.last_checkout', JSON.stringify({
+        orderNsu: payload.order_nsu,
+        planId,
+        recurrenceId: selectedRecurrence.id,
+        studioName: data.profile.studioName,
+        createdAt: new Date().toISOString()
+      }))
+      const checkoutUrl = await createInfinitePayCheckout(payload)
+      setPaymentMessage('Abrindo pagamento...')
+      window.location.href = checkoutUrl
+    } catch (error) {
+      console.error(error)
+      setPaymentMessage(error.message || 'Erro ao gerar pagamento.')
+      setIsPaying(false)
+    }
   }
 
   return <>
@@ -533,11 +579,25 @@ function PaymentReturn({ data, update, setPage }) {
   const receipt = params.get('receipt_url')
   const order = params.get('order_nsu')
   function goPanel() {
-    update(prev => ({ ...prev, profile: { ...prev.profile, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
+    let last = {}
+    try { last = JSON.parse(localStorage.getItem('unhaos.last_checkout') || '{}') } catch {}
+    const planId = last.planId || data.profile.plan || 'individual'
+    const recurrenceId = last.recurrenceId || data.profile.recurrence || 'monthly'
+    const rec = APP_CONFIG.plans[planId]?.recurrences?.find(r => r.id === recurrenceId) || APP_CONFIG.plans.individual.recurrences[0]
+    update(prev => ({
+      ...prev,
+      profile: {
+        ...prev.profile,
+        plan: planId,
+        recurrence: recurrenceId,
+        status: 'active',
+        dueDate: addMonths(todayISO(), rec.accessMonths)
+      }
+    }))
     if (typeof window !== 'undefined') window.history.replaceState({}, '', '/')
     setPage('dashboard')
   }
-  return <div className="app"><header className="topbar"><div className="logo"><span className="logo-mark"><Sparkles size={20}/></span><span>{APP_CONFIG.appName}</span><span className="pill">{APP_CONFIG.hubName}</span></div></header><main className="wrap"><section className="card"><span className="badge"><CreditCard size={16}/> Pagamento recebido pela InfinitePay</span><h1 style={{fontSize:'clamp(2rem,7vw,4rem)', margin:'0 0 10px'}}>Quase pronto</h1><p className="muted">Seu pagamento foi concluído ou está em processamento. A assinatura ficará pendente até a confirmação do pagamento.</p>{order && <p className="muted">Pedido: {order}</p>}{receipt && <a className="ghost" href={receipt} target="_blank">Ver comprovante</a>}<div className="actions"><button className="primary" onClick={goPanel}>Entrar no painel</button></div></section></main></div>
+  return <div className="app"><header className="topbar"><div className="logo"><span className="logo-mark"><Sparkles size={20}/></span><span>{APP_CONFIG.appName}</span><span className="pill">{APP_CONFIG.hubName}</span></div></header><main className="wrap"><section className="card"><span className="badge"><CreditCard size={16}/> Pagamento recebido</span><h1 style={{fontSize:'clamp(2rem,7vw,4rem)', margin:'0 0 10px'}}>Tudo certo</h1><p className="muted">Seu pagamento foi concluído ou está em processamento. Ao entrar no painel, o acesso será liberado conforme o plano escolhido.</p>{order && <p className="muted">Pedido: {order}</p>}{receipt && <a className="ghost" href={receipt} target="_blank">Ver comprovante</a>}<div className="actions"><button className="primary" onClick={goPanel}>Entrar no painel</button></div></section></main></div>
 }
 
 function PublicScheduleRoute({ data, update }) {
