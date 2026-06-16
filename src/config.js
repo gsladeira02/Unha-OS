@@ -2,21 +2,22 @@ export const APP_CONFIG = {
   appName: 'UnhaOS',
   hubName: 'SistemasOS',
   infiniteTag: 'sistemasos',
-  // Pagamento no mesmo formato dos outros apps: redireciona para a Loja Online da InfinitePay pela InfiniteTag.
-  // Se depois você criar links específicos por plano/recorrência, cole cada link abaixo.
-  paymentBaseUrl: 'https://loja.infinitepay.io/sistemasos',
+  // Pagamento por link direto de cobrança/assinatura.
+  // Para não cair na página de produtos da loja, cole aqui o LINK DIRETO de cada plano criado na InfinitePay.
+  // Caminho na InfinitePay: Vendas > Planos e Recorrência > Criar assinatura/Novo plano > copiar link de inscrição.
+  // Enquanto algum link estiver vazio, o app avisa em vez de mandar a cliente para a loja de produtos.
   paymentLinks: {
     individual: {
-      monthly: '',
-      quarterly: '',
-      semester: '',
-      annual: ''
+      monthly: '',      // Individual mensal - R$ 9,90
+      quarterly: '',    // Individual trimestral - 3x R$ 8,90
+      semester: '',     // Individual semestral - 6x R$ 7,90
+      annual: ''        // Individual anual - 12x R$ 4,90
     },
     professional: {
-      monthly: '',
-      quarterly: '',
-      semester: '',
-      annual: ''
+      monthly: '',      // Profissional mensal - R$ 19,90
+      quarterly: '',    // Profissional trimestral - 3x R$ 17,90
+      semester: '',     // Profissional semestral - 6x R$ 14,90
+      annual: ''        // Profissional anual - 12x R$ 9,90
     }
   },
   gracePeriodDays: 3,
@@ -113,7 +114,15 @@ export const APP_CONFIG = {
 export function paymentUrl(planId, recurrenceId) {
   const direct = APP_CONFIG.paymentLinks?.[planId]?.[recurrenceId]
   if (direct && String(direct).trim()) return String(direct).trim()
-  return APP_CONFIG.paymentBaseUrl || `https://loja.infinitepay.io/${APP_CONFIG.infiniteTag}`
+  return ''
+}
+
+export function missingPaymentLinkText(planId, recurrenceId) {
+  const plan = APP_CONFIG.plans[planId]
+  const recurrence = plan?.recurrences?.find((item) => item.id === recurrenceId)
+  const planName = plan?.name || planId
+  const recName = recurrence?.label || recurrenceId
+  return `O link direto de pagamento do plano ${planName} ${recName} ainda não foi configurado. Cole o link da cobrança em src/config.js > paymentLinks.${planId}.${recurrenceId}.`
 }
 
 export function formatBRL(value) {

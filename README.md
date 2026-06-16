@@ -17,7 +17,7 @@ Sistema inicial para manicure e pedicure inspirado no BellaOS.
 - Regra de tolerância: acesso até 3 dias após vencimento
 - Tela de planos com seleção de plano + recorrência
 - Conta admin com acesso ilimitado para os e-mails configurados em `src/config.js`
-- Fluxo de pagamento online temporariamente desativado para evitar erro no checkout
+- Pagamento configurado para links diretos por plano/recorrência, sem cair na página de produtos
 
 ## Planos configurados
 
@@ -38,6 +38,49 @@ Sistema inicial para manicure e pedicure inspirado no BellaOS.
 - Profissionais ilimitados
 - Locais ilimitados
 - 5 fotos totais na página pública
+
+
+## Pagamento direto por plano
+
+Para a cliente ir diretamente para a cobrança correta, você precisa criar um link na InfinitePay para cada plano/recorrência e colar em `src/config.js`, dentro de `paymentLinks`.
+
+Crie estes 8 links:
+
+- Individual mensal — R$ 9,90
+- Individual trimestral — 3x de R$ 8,90
+- Individual semestral — 6x de R$ 7,90
+- Individual anual — 12x de R$ 4,90
+- Profissional mensal — R$ 19,90
+- Profissional trimestral — 3x de R$ 17,90
+- Profissional semestral — 6x de R$ 14,90
+- Profissional anual — 12x de R$ 9,90
+
+Caminho recomendado na InfinitePay:
+
+```txt
+Vendas > Planos e Recorrência > Criar assinatura > Novo plano > copiar link de inscrição
+```
+
+Depois cole os links assim:
+
+```js
+paymentLinks: {
+  individual: {
+    monthly: 'https://link-da-cobranca-individual-mensal',
+    quarterly: 'https://link-da-cobranca-individual-trimestral',
+    semester: 'https://link-da-cobranca-individual-semestral',
+    annual: 'https://link-da-cobranca-individual-anual'
+  },
+  professional: {
+    monthly: 'https://link-da-cobranca-profissional-mensal',
+    quarterly: 'https://link-da-cobranca-profissional-trimestral',
+    semester: 'https://link-da-cobranca-profissional-semestral',
+    annual: 'https://link-da-cobranca-profissional-anual'
+  }
+}
+```
+
+Enquanto um link estiver vazio, o app mostra aviso e não manda a cliente para a página de produtos.
 
 ## Como rodar
 

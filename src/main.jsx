@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CalendarDays, Check, Clock, CreditCard, ImagePlus, Link as LinkIcon, LogOut, MapPin, Scissors, Share2, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
-import { APP_CONFIG, formatBRL, paymentUrl } from './config.js'
+import { APP_CONFIG, formatBRL, paymentUrl, missingPaymentLinkText } from './config.js'
 
 const STORE_KEY = 'unhaos_sistemasos_v1'
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -150,8 +150,14 @@ function App() {
       return
     }
 
+    const checkoutUrl = paymentUrl(selectedPlan, selectedRec)
+    if (!checkoutUrl) {
+      alert(missingPaymentLinkText(selectedPlan, selectedRec))
+      setPage('plans')
+      return
+    }
     if (submitter) { submitter.disabled = true; submitter.textContent = 'Abrindo pagamento...' }
-    window.location.href = paymentUrl(selectedPlan, selectedRec)
+    window.location.href = checkoutUrl
   }
 
   function loginExisting(e) {
@@ -263,9 +269,15 @@ function Plans({ data, update, setPage }) {
       return
     }
     setIsPaying(true)
+    const checkoutUrl = paymentUrl(planId, selectedRecurrence.id)
+    if (!checkoutUrl) {
+      setIsPaying(false)
+      setPaymentMessage(missingPaymentLinkText(planId, selectedRecurrence.id))
+      return
+    }
     setPaymentMessage('Abrindo pagamento...')
     update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
-    window.location.href = paymentUrl(planId, selectedRecurrence.id)
+    window.location.href = checkoutUrl
   }
 
   return <>
