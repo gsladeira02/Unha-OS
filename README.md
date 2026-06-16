@@ -5,12 +5,18 @@ Sistema inicial para manicure e pedicure inspirado no BellaOS.
 ## Configurações incluídas
 
 - Infinitetag: `sistemasos`
+- Supabase configurado:
+  - URL: `https://ntptobetmqvqmolijpij.supabase.co`
+  - REST: `https://ntptobetmqvqmolijpij.supabase.co/rest/v1/`
+  - Publishable key configurada no projeto
+- Sem teste grátis
 - Sem mensagens automáticas por enquanto
 - Botão manual para WhatsApp nos agendamentos
 - Locais de atendimento ilimitados nos dois planos
 - Fotos limitadas como fotos totais na página pública
 - Profissionais ilimitados no plano Profissional
 - Regra de tolerância: acesso até 3 dias após vencimento
+- Tela de planos com seleção de plano + recorrência antes do pagamento
 
 ## Planos configurados
 
@@ -47,6 +53,15 @@ npm run dev
 4. Build command: `npm run build`.
 5. Output directory: `dist`.
 
+## Variáveis na Vercel
+
+O projeto já tem fallback no código, mas o ideal é cadastrar estas variáveis na Vercel:
+
+```env
+VITE_SUPABASE_URL=https://ntptobetmqvqmolijpij.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_A-fFN4hlpcWJwsT51BPjXw_AOezFQuV
+```
+
 ## Onde alterar preços e regras
 
 Edite o arquivo:
@@ -61,4 +76,4 @@ Os links de checkout são gerados assim:
 https://checkout.infinitepay.io/sistemasos?plano=individual&recorrencia=monthly&origem=unhaos
 ```
 
-A ativação por pagamento real ainda precisa ser ligada ao retorno/webhook do gateway. O botão "Simular pago" existe apenas para teste do fluxo.
+A ativação por pagamento real ainda precisa ser ligada ao retorno/webhook do gateway. Nesta versão, o fluxo já envia a cliente para o checkout, mas não há teste grátis nem botão de pagamento simulado.

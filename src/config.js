@@ -4,6 +4,11 @@ export const APP_CONFIG = {
   infiniteTag: 'sistemasos',
   gracePeriodDays: 3,
   supportWhatsApp: '',
+  supabase: {
+    url: 'https://ntptobetmqvqmolijpij.supabase.co',
+    restUrl: 'https://ntptobetmqvqmolijpij.supabase.co/rest/v1/',
+    publishableKey: 'sb_publishable_A-fFN4hlpcWJwsT51BPjXw_AOezFQuV'
+  },
   plans: {
     individual: {
       id: 'individual',
