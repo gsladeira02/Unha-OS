@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CalendarDays, Check, Clock, CreditCard, ImagePlus, LogOut, MapPin, Scissors, Sparkles, Users, Wallet } from 'lucide-react'
+import { CalendarDays, Check, CreditCard, ImagePlus, Link as LinkIcon, LogOut, MapPin, Scissors, Share2, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
 import { APP_CONFIG, formatBRL, checkoutUrl } from './config.js'
 
@@ -81,6 +81,38 @@ function photoLimit(plan) {
   return Number.isFinite(limit) ? limit : 12
 }
 
+function publicSchedulePath(profile) {
+  const base = normalizeEmail(profile?.studioName || 'unhaos').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'agenda'
+  return `/agendar/${base}`
+}
+function publicScheduleUrl(profile) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://unha-os.vercel.app'
+  return `${origin}${publicSchedulePath(profile)}`
+}
+function normalizeWhatsAppLink(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('https://wa.me/') || raw.startsWith('http://wa.me/') || raw.startsWith('wa.me/')) return raw.startsWith('http') ? raw : `https://${raw}`
+  const digits = raw.replace(/\D/g, '')
+  return digits ? `https://wa.me/${digits}` : raw
+}
+function normalizeInstagramLink(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  const handle = raw.replace('@','')
+  return `https://instagram.com/${handle}`
+}
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+
 function App() {
   const [data, setData] = useState(loadState)
   const [page, setPage] = useState(data.account ? 'dashboard' : 'auth')
@@ -133,7 +165,6 @@ function App() {
       <nav className="nav">
         {data.account && ['dashboard','agenda','clientes','config','pagina','planos'].map(id => <button key={id} className={page===id?'active':''} onClick={() => setPage(id)}>{labelPage(id)}</button>)}
         {data.account && <button className="logout-btn" onClick={logout}><LogOut size={16}/> Sair</button>}
-        {!data.account && <button className={page==='auth'?'active':''} onClick={() => setPage('auth')}>Entrar</button>}
       </nav>
     </header>
 
@@ -156,6 +187,7 @@ function labelPage(id) { return ({dashboard:'Início', agenda:'Agenda', clientes
 function AuthScreen({ signup, loginExisting }) {
   const [mode, setMode] = useState('login')
   return <section className="auth-shell">
+    <div className="mobile-auth-logo"><span className="logo-mark"><Sparkles size={20}/></span><strong>UnhaOS</strong><span className="pill">SistemasOS</span></div>
     <div className="auth-hero card">
       <span className="badge"><Sparkles size={16}/> Sistema para manicure e pedicure</span>
       <h1>Organize sua agenda pelo celular.</h1>
@@ -334,9 +366,84 @@ function Clientes({ data, update, blocked }) {
 function PublicPage({ data, update, blocked }) {
   const plan = APP_CONFIG.plans[data.profile.plan]
   const limit = photoLimit(plan)
-  const saveProfile=e=>{e.preventDefault(); if(blocked) return; const f=new FormData(e.currentTarget); update(p=>({...p,profile:{...p.profile,studioName:f.get('studioName'),phone:f.get('phone'),instagram:f.get('instagram'),bio:f.get('bio')}}))}
-  const addPhoto=e=>{e.preventDefault(); if(blocked) return; if(data.publicPhotos.length>=limit) return alert(`Seu plano permite ${limit} fotos totais na página pública.`); const f=new FormData(e.currentTarget); const url=f.get('url'); if(!url) return; update(p=>({...p,publicPhotos:[...p.publicPhotos,{id:uid(),url,caption:f.get('caption')}]})); e.currentTarget.reset()}
-  return <section className="grid"><div className="card col-5"><h2><ImagePlus/> Página pública</h2><p className="muted">Fotos totais permitidas no plano {plan.name}: {limit}.</p><form className="form" onSubmit={saveProfile}><label>Nome público<input name="studioName" defaultValue={data.profile.studioName}/></label><label>WhatsApp<input name="phone" defaultValue={data.profile.phone}/></label><label>Instagram<input name="instagram" defaultValue={data.profile.instagram}/></label><label>Bio<textarea name="bio" defaultValue={data.profile.bio}/></label><button className="primary">Salvar página</button></form><hr style={{borderColor:'var(--line)', margin:'18px 0'}}/><form className="form" onSubmit={addPhoto}><label>URL da foto<input name="url" placeholder="https://..."/></label><label>Legenda<input name="caption"/></label><button className="primary">Adicionar foto</button></form></div><div className="card col-7"><span className="badge">Prévia pública</span><h1 style={{fontSize:'2.4rem', margin:'0 0 6px'}}>{data.profile.studioName}</h1><p className="muted">{data.profile.bio}</p><div className="photo-grid">{Array.from({length:limit}).map((_,idx)=>{const ph=data.publicPhotos[idx]; return <div className="photo" key={idx}>{ph?<img src={ph.url} alt={ph.caption || 'Foto'} />:<span>Foto {idx+1}</span>}</div>})}</div><h3>Serviços</h3><div className="list">{data.services.map(s=><div className="item" key={s.id}><div><h4>{s.name}</h4><p>{s.duration} min</p></div><span className="pill">{formatBRL(Number(s.price||0))}</span></div>)}</div></div></section>
+  const scheduleUrl = publicScheduleUrl(data.profile)
+
+  const saveProfile=e=>{
+    e.preventDefault(); if(blocked) return
+    const f=new FormData(e.currentTarget)
+    update(p=>({...p,profile:{...p.profile,studioName:f.get('studioName'),phone:f.get('phone'),instagram:f.get('instagram'),bio:f.get('bio')}}))
+  }
+
+  const addPhoto=async e=>{
+    e.preventDefault(); if(blocked) return
+    if(data.publicPhotos.length>=limit) return alert(`Seu plano permite ${limit} fotos totais na página pública.`)
+    const f=new FormData(e.currentTarget)
+    const file=f.get('photo')
+    if(!file || !file.size) return alert('Escolha uma foto da galeria.')
+    const dataUrl = await readFileAsDataUrl(file)
+    update(p=>({...p,publicPhotos:[...p.publicPhotos,{id:uid(),url:dataUrl,caption:f.get('caption')}]}))
+    e.currentTarget.reset()
+  }
+
+  async function shareSchedule() {
+    const title = `Agendamento ${data.profile.studioName}`
+    const text = `Agende seu horário no ${data.profile.studioName}`
+    try {
+      if (navigator.share) await navigator.share({ title, text, url: scheduleUrl })
+      else {
+        await navigator.clipboard.writeText(scheduleUrl)
+        alert('Link de agendamento copiado.')
+      }
+    } catch {}
+  }
+
+  const instagramLink = normalizeInstagramLink(data.profile.instagram)
+  const whatsappLink = normalizeWhatsAppLink(data.profile.phone)
+
+  return <section className="grid">
+    <div className="card col-5">
+      <h2><ImagePlus/> Página pública</h2>
+      <p className="muted">Fotos totais permitidas no plano {plan.name}: {limit}.</p>
+
+      <div className="share-box">
+        <strong>Link de agendamento</strong>
+        <p>{scheduleUrl}</p>
+        <div className="actions">
+          <button className="primary" type="button" onClick={shareSchedule}><Share2 size={16}/> Compartilhar página</button>
+          <button className="ghost" type="button" onClick={() => navigator.clipboard?.writeText(scheduleUrl)}><LinkIcon size={16}/> Copiar link</button>
+        </div>
+      </div>
+
+      <form className="form" onSubmit={saveProfile}>
+        <label>Nome público<input name="studioName" defaultValue={data.profile.studioName} placeholder="Ex: Studio da Ana"/></label>
+        <label>Link do WhatsApp<input name="phone" defaultValue={data.profile.phone} placeholder="Ex: wa.me/+5527999999999"/></label>
+        <label>Link do Instagram<input name="instagram" defaultValue={data.profile.instagram} placeholder="Ex: https://instagram.com/seuusuario"/></label>
+        <label>Bio<textarea name="bio" defaultValue={data.profile.bio} placeholder="Ex: Manicure, pedicure e nail designer."/></label>
+        <button className="primary">Salvar página</button>
+      </form>
+
+      <hr style={{borderColor:'var(--line)', margin:'18px 0'}}/>
+
+      <form className="form" onSubmit={addPhoto}>
+        <label>Adicionar foto da galeria<input name="photo" type="file" accept="image/*" /></label>
+        <label>Legenda<input name="caption" placeholder="Ex: Francesinha delicada"/></label>
+        <button className="primary" type="submit">Adicionar foto</button>
+      </form>
+    </div>
+
+    <div className="card col-7">
+      <span className="badge">Prévia pública</span>
+      <h1 style={{fontSize:'2.4rem', margin:'0 0 6px'}}>{data.profile.studioName}</h1>
+      <p className="muted">{data.profile.bio}</p>
+      <div className="public-links">
+        {whatsappLink && <a className="ghost" href={whatsappLink} target="_blank">WhatsApp</a>}
+        {instagramLink && <a className="ghost" href={instagramLink} target="_blank">Instagram</a>}
+      </div>
+      <div className="photo-grid">{Array.from({length:limit}).map((_,idx)=>{const ph=data.publicPhotos[idx]; return <div className="photo" key={idx}>{ph?<img src={ph.url} alt={ph.caption || 'Foto'} />:<span>Foto {idx+1}</span>}</div>})}</div>
+      <h3>Serviços</h3>
+      <div className="list">{data.services.length?data.services.map(s=><div className="item" key={s.id}><div><h4>{s.name}</h4><p>{s.duration} min</p></div><span className="pill">{formatBRL(Number(s.price||0))}</span></div>):<div className="empty">Cadastre seus serviços para aparecerem aqui.</div>}</div>
+    </div>
+  </section>
 }
 
 createRoot(document.getElementById('root')).render(<App />)

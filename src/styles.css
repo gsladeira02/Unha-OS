@@ -176,3 +176,20 @@ input, select, textarea { min-height: 46px; font-size: 16px; }
     grid-column: span 12;
   }
 }
+
+
+.mobile-auth-logo { display:none; align-items:center; justify-content:center; gap:10px; font-weight:900; letter-spacing:-.04em; margin-bottom: 4px; }
+.share-box { border:1px solid var(--line); background: rgba(255,255,255,.055); border-radius: 18px; padding: 14px; margin: 0 0 16px; }
+.share-box p { margin: 6px 0 0; color: var(--muted); word-break: break-all; font-size: .92rem; }
+.primary svg, .ghost svg { vertical-align: -3px; margin-right: 6px; }
+.public-links { display:flex; gap:8px; flex-wrap:wrap; margin: 12px 0 16px; }
+
+@media (max-width: 760px) {
+  .topbar { justify-content:center; }
+  .topbar .nav:empty { display:none; }
+  .mobile-auth-logo { display:flex; }
+  .auth-shell { padding-top: 4px; }
+  .auth-shell > .mobile-auth-logo { grid-column: 1 / -1; order: -3; }
+  .auth-card { order: -2; }
+  .auth-hero { order: -1; }
+}
