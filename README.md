@@ -1,54 +1,97 @@
 # UnhaOS · SistemasOS
 
-Sistema mobile-first para manicure e pedicure.
+Sistema inicial para manicure e pedicure inspirado no BellaOS.
 
-## Ajustes desta versão
+## Configurações incluídas
 
-- Ao clicar em **Criar conta e pagar**, a cliente é enviada automaticamente para o pagamento.
-- O checkout usa a API oficial da InfinitePay para criar o link de pagamento com a handle `sistemasos`.
-- Foi criada a rota `/api/create-checkout` para gerar o link.
-- Foi adicionada a tela `/pagamento-concluido` para retorno após o pagamento.
-- Foi adicionado cadastro de **horários por profissional**.
-- Cada horário pode ter profissional, local, dia da semana, início, fim e intervalo.
-- A rota `/agendar/...` continua funcionando na Vercel com rewrite.
+- Supabase configurado:
+  - URL: `https://ntptobetmqvqmolijpij.supabase.co`
+  - REST: `https://ntptobetmqvqmolijpij.supabase.co/rest/v1/`
+  - Publishable key configurada no projeto
+- Sem teste grátis
+- Sem mensagens automáticas por enquanto
+- Botão manual para WhatsApp nos agendamentos
+- Locais de atendimento ilimitados nos dois planos
+- Fotos limitadas como fotos totais na página pública
+- Profissionais ilimitados no plano Profissional
+- Regra de tolerância: acesso até 3 dias após vencimento
+- Tela de planos com seleção de plano + recorrência
+- Conta admin com acesso ilimitado para os e-mails configurados em `src/config.js`
+- Fluxo de pagamento online temporariamente desativado para evitar erro no checkout
 
-## Configuração da InfinitePay
+## Planos configurados
 
-A integração do checkout é feita via POST para:
+### Individual
+- Mensal: R$ 9,90
+- Trimestral: 3x de R$ 8,90
+- Semestral: 6x de R$ 7,90
+- Anual: 12x de R$ 4,90
+- 1 profissional
+- Locais ilimitados
+- 3 fotos totais na página pública
 
-`https://api.checkout.infinitepay.io/links`
+### Profissional
+- Mensal: R$ 19,90
+- Trimestral: 3x de R$ 17,90
+- Semestral: 6x de R$ 14,90
+- Anual: 12x de R$ 9,90
+- Profissionais ilimitados
+- Locais ilimitados
+- 5 fotos totais na página pública
 
-Payload usa:
+## Como rodar
 
-- `handle`: `sistemasos`
-- `order_nsu`
-- `redirect_url`
-- `items` com preço em centavos
+```bash
+npm install
+npm run dev
+```
 
-Se a InfinitePay exigir credencial na sua conta, configure na Vercel:
+## Como subir na Vercel
 
-`INFINITEPAY_API_TOKEN`
+1. Suba a pasta no GitHub.
+2. Importe o repositório na Vercel.
+3. Framework: Vite.
+4. Build command: `npm run build`.
+5. Output directory: `dist`.
 
-em:
+## Variáveis na Vercel
 
-`Project Settings -> Environment Variables`
+O projeto já tem fallback no código, mas o ideal é cadastrar estas variáveis na Vercel:
 
-## Vercel
+```env
+VITE_SUPABASE_URL=https://ntptobetmqvqmolijpij.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_A-fFN4hlpcWJwsT51BPjXw_AOezFQuV
+```
 
-Framework: Vite
+## Onde alterar preços, admin e regras
 
-Install Command:
+Edite o arquivo:
 
-`npm install --no-audit --no-fund`
+```txt
+src/config.js
+```
 
-Build Command:
+No campo `adminEmails`, coloque os e-mails que devem ter acesso ilimitado:
 
-`npm run build`
+```js
+adminEmails: ['gabriel.ladeira2003@gmail.com', 'gsousaladeira@icloud.com']
+```
 
-Output Directory:
+Quando uma conta for criada com um desses e-mails, o sistema libera automaticamente o plano Admin, sem vencimento e sem cobrança.
 
-`dist`
+## Pagamento
 
-## Observação
+O pagamento online foi temporariamente desativado porque o checkout estava dando erro. Por enquanto, a cliente escolhe o plano e a recorrência, e a liberação pode ser feita manualmente. Depois, o ideal é conectar o gateway via webhook para ativar a assinatura automaticamente.
 
-O banco Supabase ainda depende do SQL já enviado anteriormente. Esta versão mantém o funcionamento visual/local e prepara o fluxo para conectar com banco e webhook depois.
+
+## Pagamento InfinitePay
+
+Esta versão usa o mesmo formato dos outros apps: ao criar conta ou clicar em pagamento, o sistema redireciona direto para:
+
+```txt
+https://loja.infinitepay.io/sistemasos
+```
+
+A cliente escolhe o pagamento na sua Loja Online da InfinitePay. Não usa API, token ou rota `/api/create-checkout`.
+
+Se você criar links específicos na InfinitePay para cada plano/recorrência, cole em `src/config.js` dentro de `paymentLinks`.

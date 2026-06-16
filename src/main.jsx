@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CalendarDays, Check, Clock, CreditCard, ImagePlus, Link as LinkIcon, LogOut, MapPin, Scissors, Share2, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
-import { APP_CONFIG, formatBRL } from './config.js'
+import { APP_CONFIG, formatBRL, paymentUrl } from './config.js'
 
 const STORE_KEY = 'unhaos_sistemasos_v1'
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -87,19 +87,6 @@ function selectedRecurrence(planId, recurrenceId) {
   return plan.recurrences.find(r => r.id === recurrenceId) || plan.recurrences[0]
 }
 
-async function requestCheckout({ planId, recurrenceId, customer }) {
-  const response = await fetch('/api/create-checkout', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ planId, recurrenceId, customer })
-  })
-  const result = await response.json().catch(() => ({}))
-  if (!response.ok || !result.url) {
-    throw new Error(result.error || 'Não foi possível gerar o pagamento.')
-  }
-  return result.url
-}
-
 function publicSchedulePath(profile) {
   const base = normalizeEmail(profile?.studioName || 'unhaos').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'agenda'
   return `/agendar/${base}`
@@ -163,19 +150,8 @@ function App() {
       return
     }
 
-    try {
-      if (submitter) { submitter.disabled = true; submitter.textContent = 'Abrindo pagamento...' }
-      const checkoutUrl = await requestCheckout({
-        planId: selectedPlan,
-        recurrenceId: selectedRec,
-        customer: { name, email, phone: profile.phone || '' }
-      })
-      window.location.href = checkoutUrl
-    } catch (error) {
-      setPage('planos')
-      alert(error.message || 'Não foi possível abrir o pagamento agora.')
-      if (submitter) { submitter.disabled = false; submitter.textContent = 'Criar conta e pagar' }
-    }
+    if (submitter) { submitter.disabled = true; submitter.textContent = 'Abrindo pagamento...' }
+    window.location.href = paymentUrl(selectedPlan, selectedRec)
   }
 
   function loginExisting(e) {
@@ -280,32 +256,16 @@ function Plans({ data, update, setPage }) {
     if (!nextPlan.recurrences.some(r => r.id === recurrenceId)) setRecurrenceId('monthly')
   }
 
-  async function goToCheckout() {
+  function goToCheckout() {
     if (!data.account) return
     if (data.profile.plan === APP_CONFIG.adminPlanId) {
       alert('Conta admin já possui acesso ilimitado.')
       return
     }
     setIsPaying(true)
-    setPaymentMessage('Gerando link de pagamento...')
+    setPaymentMessage('Abrindo pagamento...')
     update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
-
-    try {
-      const checkoutUrl = await requestCheckout({
-        planId,
-        recurrenceId: selectedRecurrence.id,
-        customer: {
-          name: data.account?.name || '',
-          email: data.account?.email || '',
-          phone: data.profile?.phone || ''
-        }
-      })
-      window.location.href = checkoutUrl
-    } catch (error) {
-      setPaymentMessage('Não foi possível gerar o pagamento agora. Verifique a configuração da InfinitePay ou tente novamente.')
-      alert(error.message || 'Erro ao gerar pagamento.')
-      setIsPaying(false)
-    }
+    window.location.href = paymentUrl(planId, selectedRecurrence.id)
   }
 
   return <>
@@ -336,7 +296,7 @@ function Signup({ login }) {
       <label>Nome do studio ou perfil<input name="studioName" placeholder="Ex: Studio da Ana" /></label>
       <label>Plano<select name="plan" value={planId} onChange={(e)=>setPlanId(e.target.value)}><option value="individual">Individual · R$ 9,90/mês</option><option value="professional">Profissional · R$ 19,90/mês</option></select></label>
       <label>Recorrência<select name="recurrence">{plan.recurrences.map(r => <option key={r.id} value={r.id}>{r.label} · {r.installments}x de {formatBRL(r.installmentPrice)}</option>)}</select></label>
-      <button className="primary">Criar conta e pagar</button>
+      <button className="primary">Criar conta e ir para pagamento</button>
       <p className="muted">Sem teste grátis. Após o vencimento, há tolerância de até {APP_CONFIG.gracePeriodDays} dias.</p>
     </form>
   </div>
@@ -349,7 +309,7 @@ function PlanSelector({ planId, recurrenceId, setPlanId, setRecurrenceId, select
       <label>Plano<select value={planId} onChange={(e)=>setPlanId(e.target.value)}><option value="individual">Individual</option><option value="professional">Profissional</option></select></label>
       <label>Recorrência<select value={recurrenceId} onChange={(e)=>setRecurrenceId(e.target.value)}>{selectedPlan.recurrences.map(r => <option key={r.id} value={r.id}>{r.label} · {r.installments}x de {formatBRL(r.installmentPrice)}</option>)}</select></label>
       <div className="kpi"><strong>{selectedRecurrence.installments}x de {formatBRL(selectedRecurrence.installmentPrice)}</strong><span>Acesso por {selectedRecurrence.accessMonths} {selectedRecurrence.accessMonths===1?'mês':'meses'} · Plano {selectedPlan.name}</span></div>
-      <button className="primary" onClick={onCheckout} disabled={isPaying}>{isPaying ? 'Gerando pagamento...' : 'Ir para pagamento'}</button>
+      <button className="primary" onClick={onCheckout} disabled={isPaying}>{isPaying ? 'Abrindo pagamento...' : 'Ir para pagamento'}</button>
       {paymentMessage && <p className="muted">{paymentMessage}</p>}
       <p className="muted">Após o pagamento, a assinatura fica pendente até confirmação.</p>
     </div>

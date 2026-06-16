@@ -2,6 +2,23 @@ export const APP_CONFIG = {
   appName: 'UnhaOS',
   hubName: 'SistemasOS',
   infiniteTag: 'sistemasos',
+  // Pagamento no mesmo formato dos outros apps: redireciona para a Loja Online da InfinitePay pela InfiniteTag.
+  // Se depois você criar links específicos por plano/recorrência, cole cada link abaixo.
+  paymentBaseUrl: 'https://loja.infinitepay.io/sistemasos',
+  paymentLinks: {
+    individual: {
+      monthly: '',
+      quarterly: '',
+      semester: '',
+      annual: ''
+    },
+    professional: {
+      monthly: '',
+      quarterly: '',
+      semester: '',
+      annual: ''
+    }
+  },
   gracePeriodDays: 3,
   supportWhatsApp: '',
   adminEmails: ['gabriel.ladeira2003@gmail.com', 'gsousaladeira@icloud.com'],
@@ -90,6 +107,13 @@ export const APP_CONFIG = {
       ]
     }
   }
+}
+
+
+export function paymentUrl(planId, recurrenceId) {
+  const direct = APP_CONFIG.paymentLinks?.[planId]?.[recurrenceId]
+  if (direct && String(direct).trim()) return String(direct).trim()
+  return APP_CONFIG.paymentBaseUrl || `https://loja.infinitepay.io/${APP_CONFIG.infiniteTag}`
 }
 
 export function formatBRL(value) {
