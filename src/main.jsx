@@ -2,8 +2,7 @@ import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CalendarDays, Check, Clock, CreditCard, ImagePlus, MapPin, Scissors, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
-import { APP_CONFIG, checkoutUrl, formatBRL } from './config.js'
-import { SUPABASE_INFO } from './supabaseClient.js'
+import { APP_CONFIG, formatBRL } from './config.js'
 
 const STORE_KEY = 'unhaos_sistemasos_v1'
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -40,6 +39,7 @@ function daysAfter(dateStr) {
 }
 function isBlocked(profile) {
   if (!profile) return true
+  if (profile.plan === APP_CONFIG.adminPlanId) return false
   if (profile.status !== 'active') return true
   if (!profile.dueDate) return true
   return daysAfter(profile.dueDate) > APP_CONFIG.gracePeriodDays
@@ -48,6 +48,37 @@ function addMonths(date, months) {
   const d = new Date(`${date}T12:00:00`)
   d.setMonth(d.getMonth() + months)
   return d.toISOString().slice(0, 10)
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase()
+}
+function isAdminEmail(email) {
+  return APP_CONFIG.adminEmails.map(normalizeEmail).includes(normalizeEmail(email))
+}
+function buildProfileForSignup(email, studioName, selectedPlan, selectedRecurrence) {
+  if (isAdminEmail(email)) {
+    return {
+      ...starter.profile,
+      studioName: studioName || 'Admin SistemasOS',
+      plan: APP_CONFIG.adminPlanId,
+      recurrence: 'lifetime',
+      status: 'active',
+      dueDate: '2099-12-31'
+    }
+  }
+  return {
+    ...starter.profile,
+    studioName: studioName || starter.profile.studioName,
+    plan: selectedPlan,
+    recurrence: selectedRecurrence,
+    status: 'pending',
+    dueDate: todayISO()
+  }
+}
+function photoLimit(plan) {
+  const limit = Number(plan?.limits?.publicPhotos)
+  return Number.isFinite(limit) ? limit : 12
 }
 
 function App() {
@@ -68,9 +99,9 @@ function App() {
     const selectedPlan = form.get('plan') || 'individual'
     const selectedRecurrence = form.get('recurrence') || 'monthly'
     if (!name || !email || !password) return alert('Preencha nome, e-mail e senha.')
-    update(prev => ({ ...prev, account: { name, email }, profile: { ...prev.profile, studioName: studioName || prev.profile.studioName, plan: selectedPlan, recurrence: selectedRecurrence, status: 'pending', dueDate: todayISO() } }))
-    window.open(checkoutUrl(selectedPlan, selectedRecurrence), '_blank')
-    setPage('planos')
+    const profile = buildProfileForSignup(email, studioName, selectedPlan, selectedRecurrence)
+    update(prev => ({ ...prev, account: { name, email }, profile }))
+    setPage(profile.plan === APP_CONFIG.adminPlanId ? 'dashboard' : 'planos')
   }
 
   function activate(recurrenceId) {
@@ -99,7 +130,7 @@ function App() {
       {page === 'planos' && <Plans data={data} update={update} setPage={setPage} />}
       {!data.account && page !== 'plans' && <Signup login={login} />}
     </main>
-    <footer className="footer">{APP_CONFIG.appName} · infinitetag: <strong>{APP_CONFIG.infiniteTag}</strong> · Supabase: <strong>{SUPABASE_INFO.url}</strong></footer>
+    <footer className="footer">{APP_CONFIG.appName} · {APP_CONFIG.hubName}</footer>
   </div>
 }
 function labelPage(id) { return ({dashboard:'Início', agenda:'Agenda', clientes:'Clientes', config:'Configuração', pagina:'Página pública', planos:'Planos'})[id] }
@@ -117,10 +148,13 @@ function Plans({ data, update, setPage }) {
   }
 
   function goToCheckout() {
-    if (data.account) {
-      update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
+    if (!data.account) return
+    if (data.profile.plan === APP_CONFIG.adminPlanId) {
+      alert('Conta admin já possui acesso ilimitado.')
+      return
     }
-    window.open(checkoutUrl(planId, selectedRecurrence.id), '_blank')
+    update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
+    alert('Plano selecionado. A liberação ficará manual enquanto o pagamento online é ajustado.')
   }
 
   return <>
@@ -131,10 +165,10 @@ function Plans({ data, update, setPage }) {
         <p>Planos configurados com locais de atendimento ilimitados nos dois planos, profissionais ilimitados no Profissional e limite de fotos totais na página pública.</p>
         {!data.account && <div className="actions"><button className="primary" onClick={() => setPage('cadastro')}>Criar conta</button><button className="ghost" onClick={() => document.getElementById('planos')?.scrollIntoView({behavior:'smooth'})}>Ver preços</button></div>}
       </div>
-      {!data.account ? <Signup login={(e)=>{ e.preventDefault(); const form = new FormData(e.currentTarget); const name=form.get('name')?.trim(); const email=form.get('email')?.trim(); const password=form.get('password')?.trim(); const studioName=form.get('studioName')?.trim(); const selectedPlan=form.get('plan') || 'individual'; const selectedRecurrence=form.get('recurrence') || 'monthly'; if(!name||!email||!password) return alert('Preencha nome, e-mail e senha.'); const next={...starter, account:{name,email}, profile:{...starter.profile, studioName: studioName||starter.profile.studioName, plan:selectedPlan, recurrence:selectedRecurrence, status:'pending', dueDate: todayISO()}}; saveState(next); window.open(checkoutUrl(selectedPlan, selectedRecurrence), '_blank'); location.reload() }} /> : <PlanSelector planId={planId} recurrenceId={recurrenceId} setPlanId={selectPlan} setRecurrenceId={setRecurrenceId} selectedPlan={selectedPlan} selectedRecurrence={selectedRecurrence} onCheckout={goToCheckout}/>} 
+      {!data.account ? <Signup login={(e)=>{ e.preventDefault(); const form = new FormData(e.currentTarget); const name=form.get('name')?.trim(); const email=form.get('email')?.trim(); const password=form.get('password')?.trim(); const studioName=form.get('studioName')?.trim(); const selectedPlan=form.get('plan') || 'individual'; const selectedRecurrence=form.get('recurrence') || 'monthly'; if(!name||!email||!password) return alert('Preencha nome, e-mail e senha.'); const next={...starter, account:{name,email}, profile:buildProfileForSignup(email, studioName, selectedPlan, selectedRecurrence)}; saveState(next); location.reload() }} /> : <PlanSelector planId={planId} recurrenceId={recurrenceId} setPlanId={selectPlan} setRecurrenceId={setRecurrenceId} selectedPlan={selectedPlan} selectedRecurrence={selectedRecurrence} onCheckout={goToCheckout}/>} 
     </section>
     <section id="planos" style={{marginTop:20}} className="plan-grid">
-      {Object.values(APP_CONFIG.plans).map((plan, idx) => <PlanCard key={plan.id} plan={plan} current={data.profile.plan === plan.id} highlight={idx===1} />)}
+      {Object.values(APP_CONFIG.plans).filter(plan => !plan.hidden).map((plan) => <PlanCard key={plan.id} plan={plan} current={data.profile.plan === plan.id} highlight={plan.id==='professional'} />)}
     </section>
   </>
 }
@@ -151,8 +185,8 @@ function Signup({ login }) {
       <label>Nome do studio ou perfil<input name="studioName" placeholder="Ex: Studio da Ana" /></label>
       <label>Plano<select name="plan" value={planId} onChange={(e)=>setPlanId(e.target.value)}><option value="individual">Individual · R$ 9,90/mês</option><option value="professional">Profissional · R$ 19,90/mês</option></select></label>
       <label>Recorrência<select name="recurrence">{plan.recurrences.map(r => <option key={r.id} value={r.id}>{r.label} · {r.installments}x de {formatBRL(r.installmentPrice)}</option>)}</select></label>
-      <button className="primary">Criar conta e ir para pagamento</button>
-      <p className="muted">Sem teste grátis. O acesso é liberado após confirmação do pagamento. Após o vencimento, há tolerância de até {APP_CONFIG.gracePeriodDays} dias.</p>
+      <button className="primary">Criar conta</button>
+      <p className="muted">Sem teste grátis. Após o vencimento, há tolerância de até {APP_CONFIG.gracePeriodDays} dias.</p>
     </form>
   </div>
 }
@@ -164,8 +198,8 @@ function PlanSelector({ planId, recurrenceId, setPlanId, setRecurrenceId, select
       <label>Plano<select value={planId} onChange={(e)=>setPlanId(e.target.value)}><option value="individual">Individual</option><option value="professional">Profissional</option></select></label>
       <label>Recorrência<select value={recurrenceId} onChange={(e)=>setRecurrenceId(e.target.value)}>{selectedPlan.recurrences.map(r => <option key={r.id} value={r.id}>{r.label} · {r.installments}x de {formatBRL(r.installmentPrice)}</option>)}</select></label>
       <div className="kpi"><strong>{selectedRecurrence.installments}x de {formatBRL(selectedRecurrence.installmentPrice)}</strong><span>Acesso por {selectedRecurrence.accessMonths} {selectedRecurrence.accessMonths===1?'mês':'meses'} · Plano {selectedPlan.name}</span></div>
-      <button className="primary" onClick={onCheckout}>Ir para pagamento</button>
-      <p className="muted">Checkout configurado com a infinitetag <strong>{APP_CONFIG.infiniteTag}</strong>.</p>
+      <button className="primary" onClick={onCheckout}>Selecionar plano</button>
+      <p className="muted">A cobrança será liberada manualmente enquanto o pagamento online é ajustado.</p>
     </div>
   </div>
 }
@@ -242,7 +276,7 @@ function Clientes({ data, update, blocked }) {
 
 function PublicPage({ data, update, blocked }) {
   const plan = APP_CONFIG.plans[data.profile.plan]
-  const limit = Number(plan.limits.publicPhotos)
+  const limit = photoLimit(plan)
   const saveProfile=e=>{e.preventDefault(); if(blocked) return; const f=new FormData(e.currentTarget); update(p=>({...p,profile:{...p.profile,studioName:f.get('studioName'),phone:f.get('phone'),instagram:f.get('instagram'),bio:f.get('bio')}}))}
   const addPhoto=e=>{e.preventDefault(); if(blocked) return; if(data.publicPhotos.length>=limit) return alert(`Seu plano permite ${limit} fotos totais na página pública.`); const f=new FormData(e.currentTarget); const url=f.get('url'); if(!url) return; update(p=>({...p,publicPhotos:[...p.publicPhotos,{id:uid(),url,caption:f.get('caption')}]})); e.currentTarget.reset()}
   return <section className="grid"><div className="card col-5"><h2><ImagePlus/> Página pública</h2><p className="muted">Fotos totais permitidas no plano {plan.name}: {limit}.</p><form className="form" onSubmit={saveProfile}><label>Nome público<input name="studioName" defaultValue={data.profile.studioName}/></label><label>WhatsApp<input name="phone" defaultValue={data.profile.phone}/></label><label>Instagram<input name="instagram" defaultValue={data.profile.instagram}/></label><label>Bio<textarea name="bio" defaultValue={data.profile.bio}/></label><button className="primary">Salvar página</button></form><hr style={{borderColor:'var(--line)', margin:'18px 0'}}/><form className="form" onSubmit={addPhoto}><label>URL da foto<input name="url" placeholder="https://..."/></label><label>Legenda<input name="caption"/></label><button className="primary">Adicionar foto</button></form></div><div className="card col-7"><span className="badge">Prévia pública</span><h1 style={{fontSize:'2.4rem', margin:'0 0 6px'}}>{data.profile.studioName}</h1><p className="muted">{data.profile.bio}</p><div className="photo-grid">{Array.from({length:limit}).map((_,idx)=>{const ph=data.publicPhotos[idx]; return <div className="photo" key={idx}>{ph?<img src={ph.url} alt={ph.caption || 'Foto'} />:<span>Foto {idx+1}</span>}</div>})}</div><h3>Serviços</h3><div className="list">{data.services.map(s=><div className="item" key={s.id}><div><h4>{s.name}</h4><p>{s.duration} min</p></div><span className="pill">{formatBRL(Number(s.price||0))}</span></div>)}</div></div></section>

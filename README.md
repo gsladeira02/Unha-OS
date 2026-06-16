@@ -4,7 +4,6 @@ Sistema inicial para manicure e pedicure inspirado no BellaOS.
 
 ## Configurações incluídas
 
-- Infinitetag: `sistemasos`
 - Supabase configurado:
   - URL: `https://ntptobetmqvqmolijpij.supabase.co`
   - REST: `https://ntptobetmqvqmolijpij.supabase.co/rest/v1/`
@@ -16,7 +15,9 @@ Sistema inicial para manicure e pedicure inspirado no BellaOS.
 - Fotos limitadas como fotos totais na página pública
 - Profissionais ilimitados no plano Profissional
 - Regra de tolerância: acesso até 3 dias após vencimento
-- Tela de planos com seleção de plano + recorrência antes do pagamento
+- Tela de planos com seleção de plano + recorrência
+- Conta admin com acesso ilimitado para os e-mails configurados em `src/config.js`
+- Fluxo de pagamento online temporariamente desativado para evitar erro no checkout
 
 ## Planos configurados
 
@@ -62,7 +63,7 @@ VITE_SUPABASE_URL=https://ntptobetmqvqmolijpij.supabase.co
 VITE_SUPABASE_ANON_KEY=sb_publishable_A-fFN4hlpcWJwsT51BPjXw_AOezFQuV
 ```
 
-## Onde alterar preços e regras
+## Onde alterar preços, admin e regras
 
 Edite o arquivo:
 
@@ -70,10 +71,14 @@ Edite o arquivo:
 src/config.js
 ```
 
-Os links de checkout são gerados assim:
+No campo `adminEmails`, coloque os e-mails que devem ter acesso ilimitado:
 
-```txt
-https://checkout.infinitepay.io/sistemasos?plano=individual&recorrencia=monthly&origem=unhaos
+```js
+adminEmails: ['gabriel.ladeira2003@gmail.com', 'gsousaladeira@icloud.com']
 ```
 
-A ativação por pagamento real ainda precisa ser ligada ao retorno/webhook do gateway. Nesta versão, o fluxo já envia a cliente para o checkout, mas não há teste grátis nem botão de pagamento simulado.
+Quando uma conta for criada com um desses e-mails, o sistema libera automaticamente o plano Admin, sem vencimento e sem cobrança.
+
+## Pagamento
+
+O pagamento online foi temporariamente desativado porque o checkout estava dando erro. Por enquanto, a cliente escolhe o plano e a recorrência, e a liberação pode ser feita manualmente. Depois, o ideal é conectar o gateway via webhook para ativar a assinatura automaticamente.

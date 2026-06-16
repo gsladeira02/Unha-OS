@@ -4,12 +4,37 @@ export const APP_CONFIG = {
   infiniteTag: 'sistemasos',
   gracePeriodDays: 3,
   supportWhatsApp: '',
+  adminEmails: ['gabriel.ladeira2003@gmail.com', 'gsousaladeira@icloud.com'],
+  adminPlanId: 'admin',
   supabase: {
     url: 'https://ntptobetmqvqmolijpij.supabase.co',
     restUrl: 'https://ntptobetmqvqmolijpij.supabase.co/rest/v1/',
     publishableKey: 'sb_publishable_A-fFN4hlpcWJwsT51BPjXw_AOezFQuV'
   },
   plans: {
+    admin: {
+      id: 'admin',
+      name: 'Admin',
+      audience: 'Acesso interno SistemasOS sem cobrança e sem vencimento.',
+      monthlyPrice: 0,
+      limits: {
+        locations: 'Ilimitados',
+        professionals: 'Ilimitados',
+        publicPhotos: 'Ilimitadas'
+      },
+      features: [
+        'Acesso ilimitado',
+        'Sem vencimento',
+        'Profissionais ilimitados',
+        'Locais de atendimento ilimitados',
+        'Fotos ilimitadas na página pública',
+        'Liberação interna para administração'
+      ],
+      recurrences: [
+        { id: 'lifetime', label: 'Ilimitado', installments: 1, installmentPrice: 0, accessMonths: 1200 }
+      ],
+      hidden: true
+    },
     individual: {
       id: 'individual',
       name: 'Individual',
@@ -69,9 +94,4 @@ export const APP_CONFIG = {
 
 export function formatBRL(value) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-
-export function checkoutUrl(planId, recurrenceId) {
-  const params = new URLSearchParams({ plano: planId, recorrencia: recurrenceId, origem: APP_CONFIG.appName.toLowerCase() })
-  return `https://checkout.infinitepay.io/${APP_CONFIG.infiniteTag}?${params.toString()}`
 }
