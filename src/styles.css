@@ -202,3 +202,8 @@ input, select, textarea { min-height: 46px; font-size: 16px; }
 .public-photo-preview { margin-top: 16px; }
 .success-box { padding: 12px 14px; border-radius: 16px; border: 1px solid rgba(97, 255, 174, .35); background: rgba(97, 255, 174, .10); margin-bottom: 14px; color: var(--text); }
 @media (max-width: 760px) { .public-booking-wrap { grid-template-columns: 1fr; width: min(100% - 22px, 520px); margin-top: 12px; } .public-booking-header { padding: 14px 12px; } .public-photo-preview { grid-template-columns: repeat(2, 1fr); } }
+
+.schedule-form { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; }
+.schedule-form label { min-width: 0; }
+.schedule-form button { align-self: end; }
+@media (max-width: 760px) { .schedule-form { grid-template-columns: 1fr; } }

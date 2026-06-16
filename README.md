@@ -1,84 +1,54 @@
 # UnhaOS · SistemasOS
 
-Sistema inicial para manicure e pedicure inspirado no BellaOS.
+Sistema mobile-first para manicure e pedicure.
 
-## Configurações incluídas
+## Ajustes desta versão
 
-- Supabase configurado:
-  - URL: `https://ntptobetmqvqmolijpij.supabase.co`
-  - REST: `https://ntptobetmqvqmolijpij.supabase.co/rest/v1/`
-  - Publishable key configurada no projeto
-- Sem teste grátis
-- Sem mensagens automáticas por enquanto
-- Botão manual para WhatsApp nos agendamentos
-- Locais de atendimento ilimitados nos dois planos
-- Fotos limitadas como fotos totais na página pública
-- Profissionais ilimitados no plano Profissional
-- Regra de tolerância: acesso até 3 dias após vencimento
-- Tela de planos com seleção de plano + recorrência
-- Conta admin com acesso ilimitado para os e-mails configurados em `src/config.js`
-- Fluxo de pagamento online temporariamente desativado para evitar erro no checkout
+- Ao clicar em **Criar conta e pagar**, a cliente é enviada automaticamente para o pagamento.
+- O checkout usa a API oficial da InfinitePay para criar o link de pagamento com a handle `sistemasos`.
+- Foi criada a rota `/api/create-checkout` para gerar o link.
+- Foi adicionada a tela `/pagamento-concluido` para retorno após o pagamento.
+- Foi adicionado cadastro de **horários por profissional**.
+- Cada horário pode ter profissional, local, dia da semana, início, fim e intervalo.
+- A rota `/agendar/...` continua funcionando na Vercel com rewrite.
 
-## Planos configurados
+## Configuração da InfinitePay
 
-### Individual
-- Mensal: R$ 9,90
-- Trimestral: 3x de R$ 8,90
-- Semestral: 6x de R$ 7,90
-- Anual: 12x de R$ 4,90
-- 1 profissional
-- Locais ilimitados
-- 3 fotos totais na página pública
+A integração do checkout é feita via POST para:
 
-### Profissional
-- Mensal: R$ 19,90
-- Trimestral: 3x de R$ 17,90
-- Semestral: 6x de R$ 14,90
-- Anual: 12x de R$ 9,90
-- Profissionais ilimitados
-- Locais ilimitados
-- 5 fotos totais na página pública
+`https://api.checkout.infinitepay.io/links`
 
-## Como rodar
+Payload usa:
 
-```bash
-npm install
-npm run dev
-```
+- `handle`: `sistemasos`
+- `order_nsu`
+- `redirect_url`
+- `items` com preço em centavos
 
-## Como subir na Vercel
+Se a InfinitePay exigir credencial na sua conta, configure na Vercel:
 
-1. Suba a pasta no GitHub.
-2. Importe o repositório na Vercel.
-3. Framework: Vite.
-4. Build command: `npm run build`.
-5. Output directory: `dist`.
+`INFINITEPAY_API_TOKEN`
 
-## Variáveis na Vercel
+em:
 
-O projeto já tem fallback no código, mas o ideal é cadastrar estas variáveis na Vercel:
+`Project Settings -> Environment Variables`
 
-```env
-VITE_SUPABASE_URL=https://ntptobetmqvqmolijpij.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_A-fFN4hlpcWJwsT51BPjXw_AOezFQuV
-```
+## Vercel
 
-## Onde alterar preços, admin e regras
+Framework: Vite
 
-Edite o arquivo:
+Install Command:
 
-```txt
-src/config.js
-```
+`npm install --no-audit --no-fund`
 
-No campo `adminEmails`, coloque os e-mails que devem ter acesso ilimitado:
+Build Command:
 
-```js
-adminEmails: ['gabriel.ladeira2003@gmail.com', 'gsousaladeira@icloud.com']
-```
+`npm run build`
 
-Quando uma conta for criada com um desses e-mails, o sistema libera automaticamente o plano Admin, sem vencimento e sem cobrança.
+Output Directory:
 
-## Pagamento
+`dist`
 
-O pagamento online foi temporariamente desativado porque o checkout estava dando erro. Por enquanto, a cliente escolhe o plano e a recorrência, e a liberação pode ser feita manualmente. Depois, o ideal é conectar o gateway via webhook para ativar a assinatura automaticamente.
+## Observação
+
+O banco Supabase ainda depende do SQL já enviado anteriormente. Esta versão mantém o funcionamento visual/local e prepara o fluxo para conectar com banco e webhook depois.

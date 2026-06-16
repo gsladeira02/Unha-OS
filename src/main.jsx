@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CalendarDays, Check, CreditCard, ImagePlus, Link as LinkIcon, LogOut, MapPin, Scissors, Share2, Sparkles, Users, Wallet } from 'lucide-react'
+import { CalendarDays, Check, Clock, CreditCard, ImagePlus, Link as LinkIcon, LogOut, MapPin, Scissors, Share2, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
 import { APP_CONFIG, formatBRL } from './config.js'
 
@@ -22,6 +22,7 @@ const starter = {
   },
   locations: [],
   professionals: [],
+  professionalSchedules: [],
   services: [],
   clients: [],
   appointments: [],
@@ -81,6 +82,24 @@ function photoLimit(plan) {
   return Number.isFinite(limit) ? limit : 12
 }
 
+function selectedRecurrence(planId, recurrenceId) {
+  const plan = APP_CONFIG.plans[planId] || APP_CONFIG.plans.individual
+  return plan.recurrences.find(r => r.id === recurrenceId) || plan.recurrences[0]
+}
+
+async function requestCheckout({ planId, recurrenceId, customer }) {
+  const response = await fetch('/api/create-checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planId, recurrenceId, customer })
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok || !result.url) {
+    throw new Error(result.error || 'Não foi possível gerar o pagamento.')
+  }
+  return result.url
+}
+
 function publicSchedulePath(profile) {
   const base = normalizeEmail(profile?.studioName || 'unhaos').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'agenda'
   return `/agendar/${base}`
@@ -124,19 +143,39 @@ function App() {
 
   if (isPublicScheduleRoute) return <PublicScheduleRoute data={data} update={update} />
 
-  function signup(e) {
+  async function signup(e) {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
+    const submitter = e.currentTarget.querySelector('button[type="submit"], button:not([type])')
     const name = form.get('name')?.trim()
     const email = form.get('email')?.trim()
     const password = form.get('password')?.trim()
     const studioName = form.get('studioName')?.trim()
     const selectedPlan = form.get('plan') || 'individual'
-    const selectedRecurrence = form.get('recurrence') || 'monthly'
+    const selectedRec = form.get('recurrence') || 'monthly'
     if (!name || !email || !password) return alert('Preencha nome, e-mail e senha.')
-    const profile = buildProfileForSignup(email, studioName, selectedPlan, selectedRecurrence)
+
+    const profile = buildProfileForSignup(email, studioName, selectedPlan, selectedRec)
     update(prev => ({ ...prev, account: { name, email }, profile }))
-    setPage(profile.plan === APP_CONFIG.adminPlanId ? 'dashboard' : 'planos')
+
+    if (profile.plan === APP_CONFIG.adminPlanId) {
+      setPage('dashboard')
+      return
+    }
+
+    try {
+      if (submitter) { submitter.disabled = true; submitter.textContent = 'Abrindo pagamento...' }
+      const checkoutUrl = await requestCheckout({
+        planId: selectedPlan,
+        recurrenceId: selectedRec,
+        customer: { name, email, phone: profile.phone || '' }
+      })
+      window.location.href = checkoutUrl
+    } catch (error) {
+      setPage('planos')
+      alert(error.message || 'Não foi possível abrir o pagamento agora.')
+      if (submitter) { submitter.disabled = false; submitter.textContent = 'Criar conta e pagar' }
+    }
   }
 
   function loginExisting(e) {
@@ -252,24 +291,16 @@ function Plans({ data, update, setPage }) {
     update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
 
     try {
-      const response = await fetch('/api/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planId,
-          recurrenceId: selectedRecurrence.id,
-          customer: {
-            name: data.account?.name || '',
-            email: data.account?.email || '',
-            phone: data.profile?.phone || ''
-          }
-        })
+      const checkoutUrl = await requestCheckout({
+        planId,
+        recurrenceId: selectedRecurrence.id,
+        customer: {
+          name: data.account?.name || '',
+          email: data.account?.email || '',
+          phone: data.profile?.phone || ''
+        }
       })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok || !result.url) {
-        throw new Error(result.error || 'Não foi possível gerar o link de pagamento.')
-      }
-      window.location.href = result.url
+      window.location.href = checkoutUrl
     } catch (error) {
       setPaymentMessage('Não foi possível gerar o pagamento agora. Verifique a configuração da InfinitePay ou tente novamente.')
       alert(error.message || 'Erro ao gerar pagamento.')
@@ -305,7 +336,7 @@ function Signup({ login }) {
       <label>Nome do studio ou perfil<input name="studioName" placeholder="Ex: Studio da Ana" /></label>
       <label>Plano<select name="plan" value={planId} onChange={(e)=>setPlanId(e.target.value)}><option value="individual">Individual · R$ 9,90/mês</option><option value="professional">Profissional · R$ 19,90/mês</option></select></label>
       <label>Recorrência<select name="recurrence">{plan.recurrences.map(r => <option key={r.id} value={r.id}>{r.label} · {r.installments}x de {formatBRL(r.installmentPrice)}</option>)}</select></label>
-      <button className="primary">Criar conta</button>
+      <button className="primary">Criar conta e pagar</button>
       <p className="muted">Sem teste grátis. Após o vencimento, há tolerância de até {APP_CONFIG.gracePeriodDays} dias.</p>
     </form>
   </div>
@@ -365,18 +396,63 @@ function Kpi({ icon, label, value }) { return <div className="kpi col-3">{icon}<
 
 function Config({ data, update, blocked }) {
   const plan = APP_CONFIG.plans[data.profile.plan]
+  const days = [
+    ['mon','Segunda'], ['tue','Terça'], ['wed','Quarta'], ['thu','Quinta'], ['fri','Sexta'], ['sat','Sábado'], ['sun','Domingo']
+  ]
   const addLocation = e => { e.preventDefault(); if(blocked) return; const f=new FormData(e.currentTarget); update(p=>({...p, locations:[...p.locations,{id:uid(),name:f.get('name'),address:f.get('address'),phone:f.get('phone')}]})); e.currentTarget.reset() }
   const addPro = e => { e.preventDefault(); if(blocked) return; if(plan.id==='individual' && data.professionals.length >= 1) return alert('O plano Individual permite 1 profissional.'); const f=new FormData(e.currentTarget); update(p=>({...p, professionals:[...p.professionals,{id:uid(),name:f.get('name'),phone:f.get('phone'),commission:f.get('commission')||0}]})); e.currentTarget.reset() }
   const addService = e => { e.preventDefault(); if(blocked) return; const f=new FormData(e.currentTarget); update(p=>({...p, services:[...p.services,{id:uid(),name:f.get('name'),duration:f.get('duration'),price:f.get('price'),professionalId:f.get('professionalId')}]})); e.currentTarget.reset() }
+  const addSchedule = e => {
+    e.preventDefault(); if(blocked) return
+    const f = new FormData(e.currentTarget)
+    const professionalId = f.get('professionalId')
+    if (!professionalId) return alert('Selecione uma profissional para cadastrar o horário.')
+    update(p=>({
+      ...p,
+      professionalSchedules:[...(p.professionalSchedules || []),{
+        id: uid(),
+        professionalId,
+        locationId: f.get('locationId') || '',
+        day: f.get('day'),
+        start: f.get('start'),
+        end: f.get('end'),
+        breakStart: f.get('breakStart') || '',
+        breakEnd: f.get('breakEnd') || '',
+        active: true
+      }]
+    }))
+    e.currentTarget.reset()
+  }
   return <section className="grid">
     <div className="card col-4"><h2><MapPin/> Locais ilimitados</h2><form className="form" onSubmit={addLocation}><label>Nome<input name="name" placeholder="Studio, domicílio, sala..."/></label><label>Endereço<input name="address"/></label><label>Telefone<input name="phone"/></label><button className="primary">Cadastrar local</button></form></div>
     <div className="card col-4"><h2><Users/> Profissionais</h2><p className="muted">Limite: {plan.limits.professionals}</p><form className="form" onSubmit={addPro}><label>Nome<input name="name"/></label><label>Celular<input name="phone"/></label><label>Comissão %<input name="commission" type="number" min="0" max="100"/></label><button className="primary">Cadastrar profissional</button></form></div>
     <div className="card col-4"><h2><Scissors/> Serviços</h2><form className="form" onSubmit={addService}><label>Serviço<input name="name" placeholder="Manicure + pedicure"/></label><label>Duração em minutos<input name="duration" type="number"/></label><label>Valor<input name="price" type="number" step="0.01"/></label><label>Profissional<select name="professionalId"><option value="">Todos/indefinido</option>{data.professionals.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><button className="primary">Cadastrar serviço</button></form></div>
+    <div className="card col-12"><h2><Clock/> Horários por profissional</h2><p className="muted">Cadastre os dias e horários de atendimento de cada profissional. Esses horários aparecem vinculados à profissional escolhida.</p><form className="form schedule-form" onSubmit={addSchedule}>
+      <label>Profissional<select name="professionalId"><option value="">Selecionar profissional</option>{data.professionals.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label>Local<select name="locationId"><option value="">Todos/indefinido</option>{data.locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+      <label>Dia da semana<select name="day">{days.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
+      <label>Início<input type="time" name="start" required /></label>
+      <label>Fim<input type="time" name="end" required /></label>
+      <label>Intervalo início<input type="time" name="breakStart" /></label>
+      <label>Intervalo fim<input type="time" name="breakEnd" /></label>
+      <button className="primary">Cadastrar horário</button>
+    </form></div>
     <Lists data={data} update={update}/>
   </section>
 }
-function Lists({ data, update }) { return <div className="card col-12"><h2>Cadastros</h2><div className="grid"><MiniList title="Locais" items={data.locations}/><MiniList title="Profissionais" items={data.professionals}/><MiniList title="Serviços" items={data.services}/></div></div> }
+function Lists({ data, update }) {
+  return <div className="card col-12"><h2>Cadastros</h2><div className="grid"><MiniList title="Locais" items={data.locations}/><MiniList title="Profissionais" items={data.professionals}/><MiniList title="Serviços" items={data.services}/><ScheduleList data={data}/></div></div>
+}
 function MiniList({ title, items }) { return <div className="col-4"><h3>{title}</h3><div className="list">{items.length?items.map(i=><div className="item" key={i.id}><div><h4>{i.name}</h4><p>{i.address || i.phone || (i.price ? formatBRL(Number(i.price)) : '')}</p></div></div>):<div className="empty">Nenhum cadastro ainda.</div>}</div></div> }
+function ScheduleList({ data }) {
+  const names = { mon:'Segunda', tue:'Terça', wed:'Quarta', thu:'Quinta', fri:'Sexta', sat:'Sábado', sun:'Domingo' }
+  const items = data.professionalSchedules || []
+  return <div className="col-12"><h3>Horários cadastrados</h3><div className="list">{items.length?items.map(i=>{
+    const pro = data.professionals.find(p=>p.id===i.professionalId)
+    const loc = data.locations.find(l=>l.id===i.locationId)
+    return <div className="item" key={i.id}><div><h4>{pro?.name || 'Profissional'} · {names[i.day] || i.day}</h4><p>{i.start} às {i.end}{i.breakStart && i.breakEnd ? ` · intervalo ${i.breakStart}-${i.breakEnd}` : ''}{loc ? ` · ${loc.name}` : ''}</p></div></div>
+  }):<div className="empty">Nenhum horário cadastrado ainda.</div>}</div></div>
+}
 
 function Agenda({ data, update, blocked }) {
   const add = e => { e.preventDefault(); if(blocked) return; const f=new FormData(e.currentTarget); const service=data.services.find(s=>s.id===f.get('serviceId')); update(p=>({...p, appointments:[...p.appointments,{id:uid(),date:f.get('date'),time:f.get('time'),client:f.get('client'),phone:f.get('phone'),serviceId:f.get('serviceId'),professionalId:f.get('professionalId'),status:'Agendado',price:service?.price||0}]})); e.currentTarget.reset() }
@@ -478,6 +554,19 @@ function PublicPage({ data, update, blocked }) {
   </section>
 }
 
+
+
+function PaymentReturn({ data, update, setPage }) {
+  const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+  const receipt = params.get('receipt_url')
+  const order = params.get('order_nsu')
+  function goPanel() {
+    update(prev => ({ ...prev, profile: { ...prev.profile, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
+    if (typeof window !== 'undefined') window.history.replaceState({}, '', '/')
+    setPage('dashboard')
+  }
+  return <div className="app"><header className="topbar"><div className="logo"><span className="logo-mark"><Sparkles size={20}/></span><span>{APP_CONFIG.appName}</span><span className="pill">{APP_CONFIG.hubName}</span></div></header><main className="wrap"><section className="card"><span className="badge"><CreditCard size={16}/> Pagamento recebido pela InfinitePay</span><h1 style={{fontSize:'clamp(2rem,7vw,4rem)', margin:'0 0 10px'}}>Quase pronto</h1><p className="muted">Seu pagamento foi concluído ou está em processamento. A assinatura ficará pendente até a confirmação do pagamento.</p>{order && <p className="muted">Pedido: {order}</p>}{receipt && <a className="ghost" href={receipt} target="_blank">Ver comprovante</a>}<div className="actions"><button className="primary" onClick={goPanel}>Entrar no painel</button></div></section></main></div>
+}
 
 function PublicScheduleRoute({ data, update }) {
   const [sent, setSent] = useState(false)
