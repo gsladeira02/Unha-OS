@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CalendarDays, Check, CreditCard, ImagePlus, Link as LinkIcon, LogOut, MapPin, Scissors, Share2, Sparkles, Users, Wallet } from 'lucide-react'
 import './styles.css'
-import { APP_CONFIG, formatBRL, checkoutUrl } from './config.js'
+import { APP_CONFIG, formatBRL } from './config.js'
 
 const STORE_KEY = 'unhaos_sistemasos_v1'
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -230,6 +230,8 @@ function ExistingLogin({ loginExisting }) {
 function Plans({ data, update, setPage }) {
   const [planId, setPlanId] = useState(data.profile.plan || 'individual')
   const [recurrenceId, setRecurrenceId] = useState(data.profile.recurrence || 'monthly')
+  const [isPaying, setIsPaying] = useState(false)
+  const [paymentMessage, setPaymentMessage] = useState('')
   const selectedPlan = APP_CONFIG.plans[planId]
   const selectedRecurrence = selectedPlan.recurrences.find(r => r.id === recurrenceId) || selectedPlan.recurrences[0]
 
@@ -239,14 +241,40 @@ function Plans({ data, update, setPage }) {
     if (!nextPlan.recurrences.some(r => r.id === recurrenceId)) setRecurrenceId('monthly')
   }
 
-  function goToCheckout() {
+  async function goToCheckout() {
     if (!data.account) return
     if (data.profile.plan === APP_CONFIG.adminPlanId) {
       alert('Conta admin já possui acesso ilimitado.')
       return
     }
+    setIsPaying(true)
+    setPaymentMessage('Gerando link de pagamento...')
     update(prev => ({ ...prev, profile: { ...prev.profile, plan: planId, recurrence: selectedRecurrence.id, status: prev.profile.status === 'active' ? 'active' : 'pending' } }))
-    window.location.href = checkoutUrl(planId, selectedRecurrence.id)
+
+    try {
+      const response = await fetch('/api/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId,
+          recurrenceId: selectedRecurrence.id,
+          customer: {
+            name: data.account?.name || '',
+            email: data.account?.email || '',
+            phone: data.profile?.phone || ''
+          }
+        })
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.url) {
+        throw new Error(result.error || 'Não foi possível gerar o link de pagamento.')
+      }
+      window.location.href = result.url
+    } catch (error) {
+      setPaymentMessage('Não foi possível gerar o pagamento agora. Verifique a configuração da InfinitePay ou tente novamente.')
+      alert(error.message || 'Erro ao gerar pagamento.')
+      setIsPaying(false)
+    }
   }
 
   return <>
@@ -257,7 +285,7 @@ function Plans({ data, update, setPage }) {
         <p>Planos configurados com locais de atendimento ilimitados nos dois planos, profissionais ilimitados no Profissional e limite de fotos totais na página pública.</p>
         {!data.account && <div className="actions"><button className="primary" onClick={() => setPage('auth')}>Entrar ou criar conta</button><button className="ghost" onClick={() => document.getElementById('planos')?.scrollIntoView({behavior:'smooth'})}>Ver preços</button></div>}
       </div>
-      {data.account && <PlanSelector planId={planId} recurrenceId={recurrenceId} setPlanId={selectPlan} setRecurrenceId={setRecurrenceId} selectedPlan={selectedPlan} selectedRecurrence={selectedRecurrence} onCheckout={goToCheckout}/>} 
+      {data.account && <PlanSelector planId={planId} recurrenceId={recurrenceId} setPlanId={selectPlan} setRecurrenceId={setRecurrenceId} selectedPlan={selectedPlan} selectedRecurrence={selectedRecurrence} onCheckout={goToCheckout} isPaying={isPaying} paymentMessage={paymentMessage}/>} 
     </section>
     <section id="planos" style={{marginTop:20}} className="plan-grid">
       {Object.values(APP_CONFIG.plans).filter(plan => !plan.hidden).map((plan) => <PlanCard key={plan.id} plan={plan} current={data.profile.plan === plan.id} highlight={plan.id==='professional'} />)}
@@ -283,15 +311,16 @@ function Signup({ login }) {
   </div>
 }
 
-function PlanSelector({ planId, recurrenceId, setPlanId, setRecurrenceId, selectedPlan, selectedRecurrence, onCheckout }) {
+function PlanSelector({ planId, recurrenceId, setPlanId, setRecurrenceId, selectedPlan, selectedRecurrence, onCheckout, isPaying, paymentMessage }) {
   return <div className="card">
     <h2>Escolher assinatura</h2>
     <div className="form">
       <label>Plano<select value={planId} onChange={(e)=>setPlanId(e.target.value)}><option value="individual">Individual</option><option value="professional">Profissional</option></select></label>
       <label>Recorrência<select value={recurrenceId} onChange={(e)=>setRecurrenceId(e.target.value)}>{selectedPlan.recurrences.map(r => <option key={r.id} value={r.id}>{r.label} · {r.installments}x de {formatBRL(r.installmentPrice)}</option>)}</select></label>
       <div className="kpi"><strong>{selectedRecurrence.installments}x de {formatBRL(selectedRecurrence.installmentPrice)}</strong><span>Acesso por {selectedRecurrence.accessMonths} {selectedRecurrence.accessMonths===1?'mês':'meses'} · Plano {selectedPlan.name}</span></div>
-      <button className="primary" onClick={onCheckout}>Ir para pagamento</button>
-      <p className="muted">Depois do pagamento, o acesso pode ser liberado pela administração.</p>
+      <button className="primary" onClick={onCheckout} disabled={isPaying}>{isPaying ? 'Gerando pagamento...' : 'Ir para pagamento'}</button>
+      {paymentMessage && <p className="muted">{paymentMessage}</p>}
+      <p className="muted">Após o pagamento, a assinatura fica pendente até confirmação.</p>
     </div>
   </div>
 }

@@ -96,15 +96,16 @@ export function formatBRL(value) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-export function checkoutUrl(planId, recurrenceId) {
-  if (planId === APP_CONFIG.adminPlanId) return '#'
+export function totalAmountCents(planId, recurrenceId) {
   const plan = APP_CONFIG.plans[planId]
   const recurrence = plan?.recurrences?.find((item) => item.id === recurrenceId)
-  const params = new URLSearchParams({
-    plano: planId,
-    recorrencia: recurrenceId,
-    origem: APP_CONFIG.appName.toLowerCase(),
-    valor: recurrence ? String(recurrence.installmentPrice).replace('.', ',') : ''
-  })
-  return `https://checkout.infinitepay.io/${APP_CONFIG.infiniteTag}?${params.toString()}`
+  if (!plan || !recurrence) return 0
+  return Math.round(recurrence.installments * recurrence.installmentPrice * 100)
+}
+
+export function recurrenceDescription(planId, recurrenceId) {
+  const plan = APP_CONFIG.plans[planId]
+  const recurrence = plan?.recurrences?.find((item) => item.id === recurrenceId)
+  if (!plan || !recurrence) return 'Assinatura UnhaOS'
+  return `UnhaOS ${plan.name} ${recurrence.label} - ${recurrence.installments}x de ${formatBRL(recurrence.installmentPrice)}`
 }
